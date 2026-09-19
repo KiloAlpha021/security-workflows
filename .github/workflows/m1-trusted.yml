@@ -45,7 +45,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -c "import sys; assert sys.version_info[:3] == (3, 12, 10), sys.version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install --disable-pip-version-check --no-cache-dir --index-url https://pypi.org/simple --require-hashes -r ../trusted/requirements-dev.lock
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install --disable-pip-version-check --no-build-isolation --no-deps .
       - name: Verify dependency and project identity
         working-directory: candidate
@@ -53,7 +55,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import automated_trading_bot"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import tomllib,pathlib; p=tomllib.loads(pathlib.Path('pyproject.toml').read_text()); assert p['project']['requires-python']=='==3.12.10'; assert p['project']['dependencies']==[]"
       - name: Run independent M1 quality and acceptance gate
         working-directory: candidate
@@ -61,9 +65,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m ruff check src tests scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m mypy src/automated_trading_bot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m coverage run --source=automated_trading_bot -m pytest -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m coverage report --show-missing
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m coverage xml -o coverage.xml
       - name: Run explicit M1 security and provenance controls
         working-directory: candidate
@@ -71,4 +79,5 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pytest -q tests/test_architecture.py tests/test_blocked_assessment.py tests/test_closure_security.py tests/test_closure_traceability.py tests/test_dependency_lock.py tests/test_engineering_foundation.py tests/test_hosted_branch_protection.py tests/test_m1_completion.py tests/test_replay.py tests/test_stage0b_phase39.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip_audit --local
