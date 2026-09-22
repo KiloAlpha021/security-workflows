@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   trusted-m1-evaluator:
+    if: github.repository == 'KiloAlpha021/automated-trading-bot'
     name: trusted-m1-evaluator
     runs-on: windows-latest
     steps:
