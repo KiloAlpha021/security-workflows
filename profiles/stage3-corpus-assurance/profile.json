@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "stage3-corpus-assurance",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "STAGE-3 SPECIFICATION CORPUS ASSURANCE",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "f7cf0df47ffc4e1309803b48dc26114851dfb0ee",
+    "requirements-dev.in": "c6cf9a9ef5beafab3b30e16ca0f60c1a784a7796",
+    "requirements-dev.lock": "d64b631ccb01ca95a917a144c065a6f25de149b5",
+    "tests/test_dependency_lock.py": "888cd6108a7c8eda7b8a7b1194f2b5ee5576e75b"
+  },
+  "trusted_lock_path": "profiles/stage3-corpus-assurance/requirements-dev.lock",
+  "trusted_lock_blob": "d64b631ccb01ca95a917a144c065a6f25de149b5",
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}

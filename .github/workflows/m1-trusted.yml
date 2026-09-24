@@ -31,6 +31,7 @@ jobs:
         with:
           python-version: 3.12.10
       - name: Enforce separate candidate and trusted identities
+        id: trust_profile
         shell: pwsh
         env:
           EVENT_REPOSITORY: ${{ github.repository }}
@@ -38,7 +39,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           $ErrorActionPreference = 'Stop'
-          python trusted/verify_candidate.py --candidate candidate --trusted trusted --event-repository $env:EVENT_REPOSITORY --candidate-sha $env:CANDIDATE_SHA --event-name $env:EVENT_NAME
+          python trusted/verify_candidate.py --candidate candidate --trusted trusted --event-repository $env:EVENT_REPOSITORY --candidate-sha $env:CANDIDATE_SHA --event-name $env:EVENT_NAME --github-output $env:GITHUB_OUTPUT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install exact trusted dependencies
         working-directory: candidate
@@ -46,7 +47,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           python -c "import sys; assert sys.version_info[:3] == (3, 12, 10), sys.version"
-          python -m pip install --disable-pip-version-check --no-cache-dir --index-url https://pypi.org/simple --require-hashes -r ../trusted/requirements-dev.lock
+          $trustedLock = Join-Path '../trusted' '${{ steps.trust_profile.outputs.dependency_lock }}'
+          python -m pip install --disable-pip-version-check --no-cache-dir --index-url https://pypi.org/simple --require-hashes -r $trustedLock
           python -m pip install --disable-pip-version-check --no-build-isolation --no-deps .
       - name: Verify dependency and project identity
         working-directory: candidate
