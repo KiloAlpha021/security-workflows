@@ -9,7 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path, PurePosixPath
 
-from verify_candidate import AUTHORITY_LIMITATIONS, verify, write_github_output
+from verify_candidate import (
+    AUTHORITY_LIMITATIONS,
+    CONTROL_AUTHORITY_LIMITATIONS,
+    PRESERVED_SECURITY_INVARIANTS,
+    verify,
+    write_github_output,
+)
 
 
 def git(root: Path, *args: str) -> str:
@@ -42,6 +48,7 @@ class CandidateVerificationTests(unittest.TestCase):
         self.write_candidate("scripts/immutable.py", "# immutable M1 control\n")
         git(self.candidate, "add", ".")
         git(self.candidate, "commit", "-m", "historical candidate")
+        self.base_sha = git(self.candidate, "rev-parse", "HEAD")
 
         historical_paths = [
             "pyproject.toml",
@@ -125,6 +132,67 @@ class CandidateVerificationTests(unittest.TestCase):
         git(self.trusted, "update-ref", "refs/remotes/origin/main", "HEAD")
         return directory
 
+    def add_control_profile(
+        self,
+        *,
+        profile_id: str = "stage3-control-successor",
+        changed_path: str = "scripts/immutable.py",
+        predecessor_blob: str | None = None,
+        successor_blob: str | None = None,
+        **overrides,
+    ) -> Path:
+        predecessor_blob = predecessor_blob or git(
+            self.candidate, "rev-parse", f"{self.base_sha}:{changed_path}"
+        )
+        successor_blob = successor_blob or git(
+            self.candidate, "rev-parse", f"{self.sha}:{changed_path}"
+        )
+        directory = self.trusted / "profiles" / profile_id
+        directory.mkdir(parents=True, exist_ok=True)
+        profile = {
+            "schema_version": 1,
+            "profile_id": profile_id,
+            "profile_type": "TRUSTED_CONTROL_SUCCESSOR",
+            "policy_id": "ATIS_STAGE3_TRUSTED_CONTROL_SUCCESSOR_POLICY_V1",
+            "target_repository": "KiloAlpha021/automated-trading-bot",
+            "purpose": "EXACT TRUSTED CONTROL SUCCESSOR",
+            "predecessor_profile": "historical-m1",
+            "target_base": self.base_sha,
+            "target_head": self.sha,
+            "target_head_tree": git(self.candidate, "rev-parse", f"{self.sha}^{{tree}}"),
+            "activation_state": "ACTIVE_ON_PROTECTED_MAIN",
+            "allowed_evolved_paths": [changed_path],
+            "transitions": [
+                {
+                    "path": changed_path,
+                    "predecessor_blob": predecessor_blob,
+                    "successor_blob": successor_blob,
+                }
+            ],
+            "preserved_security_invariants": PRESERVED_SECURITY_INVARIANTS,
+            "authority_limitations": CONTROL_AUTHORITY_LIMITATIONS,
+        }
+        profile.update(overrides)
+        (directory / "profile.json").write_text(
+            json.dumps(profile, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
+        transitions = profile.get("transitions", [])
+        manifest = "".join(
+            f"{item['successor_blob']}  {item['path']}\n"
+            for item in transitions
+            if isinstance(item, dict)
+            and set(item) >= {"path", "successor_blob"}
+        )
+        (directory / "trusted-git-blobs.txt").write_text(
+            manifest or f"{successor_blob}  {changed_path}\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        git(self.trusted, "add", ".")
+        git(self.trusted, "commit", "-m", f"add {profile_id}")
+        git(self.trusted, "update-ref", "refs/remotes/origin/main", "HEAD")
+        return directory
+
     def check(
         self,
         candidate: Path | None = None,
@@ -132,25 +200,139 @@ class CandidateVerificationTests(unittest.TestCase):
         repository: str = "KiloAlpha021/automated-trading-bot",
         sha: str | None = None,
         event: str = "pull_request",
-    ) -> PurePosixPath:
+        base_sha: str | None = None,
+        head_sha: str | None = None,
+    ) -> tuple[PurePosixPath, str]:
         return verify(
             candidate or self.candidate,
             trusted or self.trusted,
             repository,
             sha or self.sha,
             event,
+            base_sha or self.base_sha,
+            head_sha or self.sha,
         )
 
     def test_valid_historical_candidate_uses_unchanged_historical_lock(self) -> None:
-        self.assertEqual(self.check(), PurePosixPath("requirements-dev.lock"))
+        self.assertEqual(
+            self.check(),
+            (PurePosixPath("requirements-dev.lock"), "historical-m1"),
+        )
 
     def test_exact_approved_successor_uses_trusted_profile_lock(self) -> None:
         blobs = self.successor_candidate()
         self.add_profile(blobs)
         self.assertEqual(
             self.check(),
-            PurePosixPath("profiles/stage3-corpus-assurance/requirements-dev.lock"),
+            (
+                PurePosixPath("profiles/stage3-corpus-assurance/requirements-dev.lock"),
+                "historical-m1",
+            ),
         )
+
+    def make_control_successor(self) -> None:
+        self.write_candidate("scripts/immutable.py", "# stronger immutable control\n")
+        self.commit_candidate("trusted control successor")
+
+    def test_exact_control_successor_selects_one_trusted_profile(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile()
+        self.assertEqual(
+            self.check(),
+            (PurePosixPath("requirements-dev.lock"), "stage3-control-successor"),
+        )
+
+    def test_control_successor_preserves_historical_manifest(self) -> None:
+        historical = (self.trusted / "trusted-git-blobs.txt").read_bytes()
+        self.make_control_successor()
+        self.add_control_profile()
+        self.check()
+        self.assertEqual((self.trusted / "trusted-git-blobs.txt").read_bytes(), historical)
+
+    def assert_control_profile_mismatch(self, **overrides) -> None:
+        self.make_control_successor()
+        self.add_control_profile(**overrides)
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_wrong_control_target_repository_fails(self) -> None:
+        self.assert_control_profile_mismatch(target_repository="KiloAlpha021/other")
+
+    def test_wrong_control_base_fails(self) -> None:
+        self.assert_control_profile_mismatch(target_base="0" * 40)
+
+    def test_wrong_control_head_fails(self) -> None:
+        self.assert_control_profile_mismatch(target_head="0" * 40)
+
+    def test_wrong_control_tree_fails(self) -> None:
+        self.assert_control_profile_mismatch(target_head_tree="0" * 40)
+
+    def test_wrong_control_predecessor_blob_fails(self) -> None:
+        self.assert_control_profile_mismatch(predecessor_blob="0" * 40)
+
+    def test_wrong_control_successor_blob_fails(self) -> None:
+        self.assert_control_profile_mismatch(successor_blob="0" * 40)
+
+    def test_inactive_control_profile_fails(self) -> None:
+        self.assert_control_profile_mismatch(activation_state="PROPOSED")
+
+    def test_control_authority_expansion_fails(self) -> None:
+        self.assert_control_profile_mismatch(
+            authority_limitations=[*CONTROL_AUTHORITY_LIMITATIONS, "MERGE_AUTHORITY"]
+        )
+
+    def test_control_invariant_removal_fails(self) -> None:
+        self.assert_control_profile_mismatch(
+            preserved_security_invariants=PRESERVED_SECURITY_INVARIANTS[:-1]
+        )
+
+    def test_wildcard_control_path_fails(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile(
+            changed_path="scripts/immutable.py",
+            allowed_evolved_paths=["scripts/*.py"],
+        )
+        with self.assertRaisesRegex(ValueError, "Wildcard"):
+            self.check()
+
+    def test_extra_control_path_fails(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile(
+            allowed_evolved_paths=["scripts/immutable.py", "tests/extra.py"]
+        )
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_multiple_control_profiles_fail(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile()
+        self.add_control_profile(profile_id="duplicate-control-successor")
+        with self.assertRaisesRegex(ValueError, "Multiple applicable"):
+            self.check()
+
+    def test_candidate_head_drift_invalidates_control_profile(self) -> None:
+        self.make_control_successor()
+        approved = self.sha
+        self.add_control_profile()
+        self.write_candidate("unrelated.txt", "drift\n")
+        self.commit_candidate("candidate drift")
+        with self.assertRaisesRegex(ValueError, "No applicable"):
+            self.check(head_sha=self.sha)
+        self.assertNotEqual(approved, self.sha)
+
+    def test_candidate_tree_drift_invalidates_control_profile(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile(target_head_tree="0" * 40)
+        with self.assertRaisesRegex(ValueError, "No applicable"):
+            self.check()
+
+    def test_historical_profile_rejects_successor_bytes(self) -> None:
+        self.make_control_successor()
+        with self.assertRaisesRegex(ValueError, "No applicable"):
+            self.check()
+
+    def test_candidate_cannot_choose_control_profile(self) -> None:
+        self.assertNotIn("profile", inspect.signature(verify).parameters)
 
     def test_reversed_roots_fail(self) -> None:
         with self.assertRaises(ValueError):
@@ -177,7 +359,7 @@ class CandidateVerificationTests(unittest.TestCase):
     def test_changed_immutable_m1_control_fails(self) -> None:
         self.write_candidate("scripts/immutable.py", "changed\n")
         self.commit_candidate("change immutable")
-        with self.assertRaisesRegex(ValueError, "M1 control mismatch"):
+        with self.assertRaisesRegex(ValueError, "trusted control successor"):
             self.check()
 
     def test_missing_candidate_pyproject_fails(self) -> None:
@@ -299,10 +481,31 @@ class CandidateVerificationTests(unittest.TestCase):
 
     def test_validated_lock_output_is_deterministic(self) -> None:
         output = Path(self.temp.name) / "github-output"
-        write_github_output(output, PurePosixPath("requirements-dev.lock"))
-        self.assertEqual(output.read_text(), "dependency_lock=requirements-dev.lock\n")
+        write_github_output(
+            output,
+            PurePosixPath("requirements-dev.lock"),
+            "historical-m1",
+            "1" * 40,
+            "2" * 40,
+            "3" * 40,
+        )
+        self.assertEqual(
+            output.read_text(),
+            "dependency_lock=requirements-dev.lock\n"
+            "selected_trusted_profile=historical-m1\n"
+            f"evaluated_candidate_head={'1' * 40}\n"
+            f"evaluated_candidate_tree={'2' * 40}\n"
+            f"trusted_commit={'3' * 40}\n",
+        )
         with self.assertRaisesRegex(ValueError, "Unsafe"):
-            write_github_output(output, PurePosixPath("../candidate/lock"))
+            write_github_output(
+                output,
+                PurePosixPath("../candidate/lock"),
+                "historical-m1",
+                "1" * 40,
+                "2" * 40,
+                "3" * 40,
+            )
 
     def test_workflow_commands_are_candidate_scoped_and_trusted_lock_controlled(self) -> None:
         workflow = (Path(__file__).parent / ".github/workflows/m1-trusted.yml").read_text()
@@ -311,6 +514,8 @@ class CandidateVerificationTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.sha }}", workflow)
         self.assertIn("ref: main", workflow)
         self.assertIn("--github-output $env:GITHUB_OUTPUT", workflow)
+        self.assertIn("--event-base-sha $env:EVENT_BASE_SHA", workflow)
+        self.assertIn("--event-head-sha $env:EVENT_HEAD_SHA", workflow)
         self.assertIn("steps.trust_profile.outputs.dependency_lock", workflow)
         self.assertNotIn("--profile", workflow)
         self.assertNotIn("../trusted/requirements-dev.lock\n", workflow)
