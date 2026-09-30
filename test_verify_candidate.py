@@ -13,6 +13,7 @@ from verify_candidate import (
     AUTHORITY_LIMITATIONS,
     CONTROL_AUTHORITY_LIMITATIONS,
     PRESERVED_SECURITY_INVARIANTS,
+    load_profiles,
     verify,
     write_github_output,
 )
@@ -334,6 +335,63 @@ class CandidateVerificationTests(unittest.TestCase):
     def test_candidate_cannot_choose_control_profile(self) -> None:
         self.assertNotIn("profile", inspect.signature(verify).parameters)
 
+    def archive_control_fixture(self, directory: Path) -> Path:
+        destination = self.trusted / "archives" / "profiles" / directory.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        directory.rename(destination)
+        if not any((self.trusted / "profiles").iterdir()):
+            (self.trusted / "profiles").rmdir()
+        git(self.trusted, "add", ".")
+        git(self.trusted, "commit", "-m", "preserve non-active evidence")
+        git(self.trusted, "update-ref", "refs/remotes/origin/main", "HEAD")
+        return destination
+
+    def test_candidate_bound_profile_in_active_namespace_fails(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile(activation_state="CANDIDATE_BOUND_LOCAL_ONLY")
+        with self.assertRaisesRegex(ValueError, "Inactive trusted control"):
+            self.check()
+
+    def test_archived_matching_profile_cannot_authorize_candidate(self) -> None:
+        self.make_control_successor()
+        directory = self.add_control_profile(
+            activation_state="CANDIDATE_BOUND_LOCAL_ONLY"
+        )
+        archived = self.archive_control_fixture(directory)
+        metadata = archived / "profile.json"
+        original = json.loads(metadata.read_text())
+        for state in ("CANDIDATE_BOUND_LOCAL_ONLY", "ACTIVE_ON_PROTECTED_MAIN"):
+            with self.subTest(archived_claim=state):
+                profile = {**original, "activation_state": state}
+                metadata.write_text(json.dumps(profile), encoding="utf-8")
+                git(self.trusted, "add", ".")
+                git(self.trusted, "commit", "--allow-empty", "-m", "archived claim")
+                git(self.trusted, "update-ref", "refs/remotes/origin/main", "HEAD")
+                self.assertEqual(load_profiles(self.trusted), ([], []))
+                with self.assertRaisesRegex(ValueError, "No applicable trusted control"):
+                    self.check()
+
+    def test_archive_does_not_mask_malformed_active_profile(self) -> None:
+        self.make_control_successor()
+        archived = self.add_control_profile(
+            profile_id="archived-record", activation_state="CANDIDATE_BOUND_LOCAL_ONLY"
+        )
+        self.archive_control_fixture(archived)
+        active = self.add_control_profile()
+        self.assertEqual(
+            self.check(),
+            (PurePosixPath("requirements-dev.lock"), "stage3-control-successor"),
+        )
+        metadata = active / "profile.json"
+        profile = json.loads(metadata.read_text())
+        profile["unexpected"] = "unapproved"
+        metadata.write_text(json.dumps(profile), encoding="utf-8")
+        git(self.trusted, "add", ".")
+        git(self.trusted, "commit", "-m", "malformed active profile")
+        git(self.trusted, "update-ref", "refs/remotes/origin/main", "HEAD")
+        with self.assertRaisesRegex(ValueError, "Malformed trusted control"):
+            self.check()
+
     def test_reversed_roots_fail(self) -> None:
         with self.assertRaises(ValueError):
             self.check(candidate=self.trusted, trusted=self.candidate)
@@ -526,6 +584,44 @@ class CandidateVerificationTests(unittest.TestCase):
             "Run explicit M1 security and provenance controls",
         ):
             self.assertIn(f"- name: {step}\n        working-directory: candidate", workflow)
+
+
+class ArchivedRecordTests(unittest.TestCase):
+    def test_pr33_exact_bytes_and_nonactive_provenance_are_preserved(self) -> None:
+        root = Path(__file__).parent
+        name = "stage3-sync2-consumability-record"
+        archive = root / "archives" / "profiles" / name
+        expected = {
+            "profile.json": "e9c1eb4e120791488049b5deb105fe246d9e5a09",
+            "trusted-git-blobs.txt": "0e3ea5d7d6d342a2b36cdd18b25586de604c8cc4",
+        }
+        for filename, blob in expected.items():
+            # Compare canonical Git bytes, independent of Windows CRLF checkout.
+            actual = git(root, "hash-object", str(archive / filename))
+            self.assertEqual(actual, blob)
+        profile = json.loads((archive / "profile.json").read_text())
+        self.assertEqual(profile["activation_state"], "CANDIDATE_BOUND_LOCAL_ONLY")
+        self.assertEqual(profile["authority_limitations"], CONTROL_AUTHORITY_LIMITATIONS)
+        provenance = json.loads((archive / "provenance.json").read_text())
+        self.assertEqual(provenance["classification"], "LEGITIMATE_NON_ACTIVE_RECORD")
+        self.assertEqual(provenance["authority_granted"], [])
+        self.assertFalse(provenance["protected_activation_authorized"])
+        self.assertEqual(
+            provenance["original_pull_request"],
+            "https://github.com/KiloAlpha021/security-workflows/pull/33",
+        )
+        self.assertEqual(
+            provenance["original_protected_merge"],
+            "fae132651ced042270e34127a0f3b09abae554dd",
+        )
+        for entry in provenance["files"]:
+            filename = Path(entry["archived_path"]).name
+            self.assertEqual(entry["git_blob"], expected[filename])
+            self.assertEqual(entry["original_path"], f"profiles/{name}/{filename}")
+            self.assertEqual(entry["archived_path"], f"archives/profiles/{name}/{filename}")
+        self.assertFalse((root / "profiles" / name).exists())
+        _, active = load_profiles(root)
+        self.assertNotIn(name, [item["profile_id"] for item in active])
 
 
 if __name__ == "__main__":
