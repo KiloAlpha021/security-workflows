@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "record_kind": "NON_ACTIVE_HISTORICAL_PROFILE",
+  "classification": "LEGITIMATE_NON_ACTIVE_RECORD",
+  "authority_granted": [],
+  "protected_activation_authorized": false,
+  "disposition_basis": "Explicit owner disposition: preserve candidate-bound record without protected-main activation.",
+  "original_repository": "KiloAlpha021/security-workflows",
+  "original_pull_request": "https://github.com/KiloAlpha021/security-workflows/pull/33",
+  "original_base": "39378d08590552a797d6f61acc2e731b3c80c96b",
+  "original_candidate_commit": "297ecd4e041746d8fef713d6a34211232fd7580c",
+  "original_candidate_tree": "a5b81bb9660e6ae26c8b97685f4d51552c97c5e8",
+  "original_protected_merge": "fae132651ced042270e34127a0f3b09abae554dd",
+  "original_protected_tree": "8006f02a3026aac80f9276ea0c81ca70c70ed460",
+  "original_ordered_parents": [
+    "2ff5bb4ff3853bf56736a4335e98de1ba7519f1e",
+    "297ecd4e041746d8fef713d6a34211232fd7580c"
+  ],
+  "original_activation_state": "CANDIDATE_BOUND_LOCAL_ONLY",
+  "publication_effect": "Published inside the active profile namespace; unchanged loader rejected it as Inactive trusted control successor profile.",
+  "files": [
+    {
+      "original_path": "profiles/stage3-sync2-consumability-record/profile.json",
+      "archived_path": "archives/profiles/stage3-sync2-consumability-record/profile.json",
+      "git_blob": "e9c1eb4e120791488049b5deb105fe246d9e5a09"
+    },
+    {
+      "original_path": "profiles/stage3-sync2-consumability-record/trusted-git-blobs.txt",
+      "archived_path": "archives/profiles/stage3-sync2-consumability-record/trusted-git-blobs.txt",
+      "git_blob": "0e3ea5d7d6d342a2b36cdd18b25586de604c8cc4"
+    }
+  ]
+}
