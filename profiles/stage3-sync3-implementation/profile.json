@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "profile_id": "stage3-sync3-implementation",
+  "profile_type": "TRUSTED_CONTROL_SUCCESSOR",
+  "policy_id": "ATIS_STAGE3_TRUSTED_CONTROL_SUCCESSOR_POLICY_V1",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "STAGE-3 SYNC-3 EXACT ACCEPTED IMPLEMENTATION CANDIDATE TRUSTED-CONTROL ASSURANCE ONLY",
+  "predecessor_profile": "historical-m1",
+  "target_base": "cfae6a1ecccb715de5ea4ea07f4dbd81c60de619",
+  "target_head": "f47c0c3b966fd49b7df5854890a2f5a2919dedfa",
+  "target_head_tree": "e0ada9e8434b2122b547a323b83e1306553e9042",
+  "activation_state": "ACTIVE_ON_PROTECTED_MAIN",
+  "allowed_evolved_paths": [
+    "tests/test_blocked_assessment.py"
+  ],
+  "transitions": [
+    {
+      "path": "tests/test_blocked_assessment.py",
+      "predecessor_blob": "ae7855e52a3b20d0609dd0435b040f81fe31e4a8",
+      "successor_blob": "caa1afd8623ec9ac34222947b6ef336a24e34e7b"
+    }
+  ],
+  "preserved_security_invariants": [
+    "FROZEN_M1_EVIDENCE_MEMBERSHIP",
+    "EXACT_HISTORICAL_IDENTITY",
+    "MISSING_SOURCE_REJECTION",
+    "CHANGED_HISTORICAL_OBJECT_REJECTION",
+    "HISTORICAL_REPRODUCIBILITY",
+    "CANDIDATE_TRUSTED_SEPARATION",
+    "NO_SELF_CERTIFICATION"
+  ],
+  "authority_limitations": [
+    "NO_ATIS_MERGE_AUTHORITY",
+    "NO_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_OR_STORAGE_AUTHORITY",
+    "NO_TRADING_OR_FINANCIAL_AUTHORITY",
+    "NO_AI_TRADING_AUTHORITY"
+  ]
+}
