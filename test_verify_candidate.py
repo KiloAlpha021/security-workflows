@@ -214,6 +214,50 @@ class CandidateVerificationTests(unittest.TestCase):
             head_sha or self.sha,
         )
 
+    def assert_schema_version_requires_integer_one(self, directory: Path) -> None:
+        metadata = directory / "profile.json"
+        original = json.loads(metadata.read_text(encoding="utf-8"))
+        self.assertIs(type(original["schema_version"]), int)
+        self.assertEqual(original["schema_version"], 1)
+        expected = self.check()
+        cases = (
+            ("true", True),
+            ("false", False),
+            ("float", 1.0),
+            ("string", "1"),
+            ("null", None),
+            ("list", []),
+            ("object", {}),
+            ("missing", None),
+        )
+        for label, value in cases:
+            with self.subTest(schema=label):
+                profile = dict(original)
+                if label == "missing":
+                    del profile["schema_version"]
+                else:
+                    profile["schema_version"] = value
+                metadata.write_text(
+                    json.dumps(profile, indent=2) + "\n", encoding="utf-8", newline="\n"
+                )
+                with self.assertRaisesRegex(
+                    ValueError, "Unsupported trusted successor profile schema"
+                ):
+                    self.check()
+        metadata.write_text(
+            json.dumps(original, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
+        self.assertEqual(self.check(), expected)
+
+    def test_dependency_schema_version_requires_integer_one(self) -> None:
+        directory = self.add_profile(self.successor_candidate())
+        self.assert_schema_version_requires_integer_one(directory)
+
+    def test_control_schema_version_requires_integer_one(self) -> None:
+        self.make_control_successor()
+        directory = self.add_control_profile()
+        self.assert_schema_version_requires_integer_one(directory)
+
     def test_valid_historical_candidate_uses_unchanged_historical_lock(self) -> None:
         self.assertEqual(
             self.check(),
