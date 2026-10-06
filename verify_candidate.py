@@ -173,7 +173,8 @@ def load_profiles(trusted: Path) -> tuple[list[dict[str, object]], list[dict[str
         if profile_id in seen_ids or metadata_path.parent.name != profile_id:
             raise ValueError("Duplicate or misplaced trusted successor profile")
         seen_ids.add(profile_id)
-        if profile.get("schema_version") != 1:
+        schema_version = profile.get("schema_version")
+        if type(schema_version) is not int or schema_version != 1:
             raise ValueError("Unsupported trusted successor profile schema")
         if profile.get("target_repository") != CANDIDATE_REPOSITORY:
             raise ValueError("Wrong successor target repository")
