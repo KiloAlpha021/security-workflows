@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -46,6 +47,35 @@ class WitnessTests(unittest.TestCase):
     def test_exact_projection_admitted(self):
         result = witness.verify(self.base, self.candidate, self.head, self.tree)
         self.assertEqual(result["changed_paths"], [witness.TEST_PATH])
+
+    def test_fourth_projection_only_prevents_isolated_probe_bytecode(self):
+        before = b'[os.sys.executable, "-I", "-S", "-c",'
+        after = b'[os.sys.executable, "-I", "-S", "-B", "-c",'
+        self.assertEqual(self.expected.count(after), 1)
+        prior_projection = self.expected.replace(after, before, 1)
+        self.assertEqual(hashlib.sha256(prior_projection).hexdigest(),
+                         "13e0448a564d4d16d3d016e7559ccfd0ab5c057299af86a4fe059d2372d227f3")
+        original = witness.git
+        for replacement in (before, after.replace(b'"-B"', b'"-E"')):
+            payload = self.expected.replace(after, replacement, 1)
+            def changed(root, *args):
+                if root == self.candidate and args == ("show", f"{self.head}:{witness.TEST_PATH}"):
+                    return payload
+                return original(root, *args)
+            with self.subTest(replacement=replacement), mock.patch.object(
+                    witness, "git", side_effect=changed), self.assertRaisesRegex(
+                    witness.Rejected, "differ from independent oracle"):
+                witness.verify(self.base, self.candidate, self.head, self.tree)
+
+    def test_post_test_bytecode_residue_remains_rejected(self):
+        original = witness.git
+        def dirty(root, *args):
+            if root == self.candidate and args == ("status", "--porcelain", "--untracked-files=all"):
+                return b"?? __pycache__/protected_policy_bootstrap.cpython-312.pyc\n"
+            return original(root, *args)
+        with mock.patch.object(witness, "git", side_effect=dirty), self.assertRaisesRegex(
+                witness.Rejected, "dirty checkout"):
+            witness.verify(self.base, self.candidate, self.head, self.tree)
 
     def test_wrong_sha_base_tree_and_mutable_id_rejected(self):
         cases = [("0" * 40, self.tree, witness.BASE),

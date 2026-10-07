@@ -7,7 +7,8 @@ protection before any result is accepted as certification.
 ## Scope and independence
 
 Source: `KiloAlpha021/security-workflows`, dedicated branch
-`f7-policy-maintenance-certifier-v1`. Its parent is protected trust main
+`f7-policy-maintenance-certifier-v2`. Its parent is the frozen v1 witness
+`67765792056c3483965e840785307d16d08586aa`, whose parent is protected trust main
 `619960e99a07bedf42ecf2284d430225130a8fdb`. This branch is not a change to the
 existing trust main, ATIS, PR64, PR81, or frozen policy PR21.
 
@@ -24,7 +25,11 @@ owner-established witness; no candidate-selected profiles or exceptions exist.
 The fixture recipe canonicalizes two cloned repository Paths, applies
 `core.autocrlf=false` to the initial clone and the S2C historical checkout,
 and scopes a three-variable Git environment to the deliberate CRLF attack only.
-The previous environment is restored and checked. Existing assertions remain.
+The previous environment is restored and checked. A fourth projected method adds
+only `-B` to the isolated standard-library bootstrap probe, preserving `-I`,
+`-S`, and every assertion. This prevents bytecode at source; strict post-suite
+cleanliness remains required, with no cache cleanup or ignored residue. The
+original three-fixture projection is retained exactly as historical evidence.
 The full 123-test protected suite is required with exactly its two pre-existing
 input-binding skips. Bootstrap root rejection is separately attacked with
 relative, missing, aliased, and junction/symlink paths. No production validator
@@ -41,7 +46,7 @@ workflow rule are prerequisites to using it. A separate branch avoids the
 policy -> security-workflows/main -> policy certification cycle. Existing
 default-branch protections are left intact; no bypass is used.
 
-Source ruleset: active, exact branch `refs/heads/f7-policy-maintenance-certifier-v1`,
+Source ruleset: active, exact branch `refs/heads/f7-policy-maintenance-certifier-v2`,
 no bypass actors, restrict updates, restrict deletions, non-fast-forward protection.
 Required target workflow: this repository's
 `.github/workflows/security-policy-maintenance.yml`, source branch above and

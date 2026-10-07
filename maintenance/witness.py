@@ -17,7 +17,7 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "f7-policy-maintenance-certifier-v1"
+SOURCE_BRANCH = "f7-policy-maintenance-certifier-v2"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
 BASE = "c047a203fc7e1e3326e044f128a7323dea60041b"
 BASE_TREE = "c49bebd5d6106da224da733d30b4c2d97c430bfc"
@@ -71,7 +71,8 @@ def projected_tests(base: bytes) -> bytes:
     replacements = []
     names = {"test_native_s2c_is_exactly_one_s2_anchored_layer",
              "test_native_one_use_and_closed_selection_schema",
-             "test_prebootstrap_preparation_restores_windows_checkout_bytes"}
+             "test_prebootstrap_preparation_restores_windows_checkout_bytes",
+             "test_bootstrap_is_standard_library_only_and_pre_environment_importable"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef) or node.name not in names:
             continue
@@ -90,6 +91,10 @@ def projected_tests(base: bytes) -> bytes:
                 block = replace_once(block,
                     'git(repo, "checkout", "--detach", self.S2)',
                     'git(repo, "-c", "core.autocrlf=false", "checkout", "--detach", self.S2)')
+        elif node.name == "test_bootstrap_is_standard_library_only_and_pre_environment_importable":
+            block = replace_once(block,
+                '[os.sys.executable, "-I", "-S", "-c",',
+                '[os.sys.executable, "-I", "-S", "-B", "-c",')
         else:
             begin = block.index('            workflow_path.unlink()\n')
             finish = block.index('\n            workflow = yaml.load(', begin)
@@ -105,7 +110,7 @@ def projected_tests(base: bytes) -> bytes:
                        '                {key: os.environ.get(key) for key in fixture_env}, fixture_env)\n')
             block = block[:begin] + snapshot + attack + restore + block[finish:]
         replacements.append((start, end, block))
-    require(len(replacements) == 3, "exact three fixtures required")
+    require(len(replacements) == 4, "exact four fixture/probe methods required")
     for start, end, block in sorted(replacements, reverse=True):
         lines[start:end] = [block]
     result = "".join(lines).encode("utf-8")
