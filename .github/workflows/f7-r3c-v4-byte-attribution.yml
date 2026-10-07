@@ -1,0 +1,264 @@
+name: NON-AUTHORITATIVE F7-R3C V4 byte attribution
+'on':
+  push:
+    branches:
+    - diagnostic-f7-r3c-v4-byte-attribution-20261007
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    name: DIAGNOSTIC ONLY - four exact checkouts
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+    - name: Set up production CPython for read-only observations
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      with:
+        python-version: 3.12.10
+    - name: Prepare non-authoritative observer outside all checkouts
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $source = @'
+        """Non-authoritative byte observation only; never repair checkout state."""
+        import hashlib
+        import json
+        import os
+        from pathlib import Path
+        import platform
+        import subprocess
+        import sys
+
+        FROZEN = {
+            "witness": "737163e87eef8c61f16d3abb995f5fbcfd25616b",
+            "protected": "416b6fded406e6d2ff425e3192885f2dc3341900",
+            "pr21": "91a4d6c156b635ddf2ce153c71a7a10042a6f9c7",
+            "candidate": "ec6106b7ff7eb717c86714d70d7d7aaad695a165",
+        }
+
+
+        def emit(kind, data):
+            print("BYTE_DIAGNOSTIC_" + kind + "=" + json.dumps(data, sort_keys=True), flush=True)
+
+
+        def git(root, *args, allowed=(0,)):
+            env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+            result = subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args],
+                                    env=env, capture_output=True)
+            if result.returncode not in allowed:
+                raise RuntimeError((args, result.returncode, result.stderr.decode(errors="replace")))
+            return result.stdout
+
+
+        def stats(raw):
+            return {"length": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
+                    "cr": raw.count(b"\r"), "crlf": raw.count(b"\r\n"),
+                    "lf": raw.count(b"\n"), "lone_lf": raw.count(b"\n") - raw.count(b"\r\n"),
+                    "bom": raw.startswith(b"\xef\xbb\xbf"), "nul": raw.count(b"\x00"),
+                    "trailing_lf": len(raw) - len(raw.rstrip(b"\n"))}
+
+
+        def snapshot(name, phase):
+            root = Path(name).resolve(strict=True)
+            index_path = Path(git(root, "rev-parse", "--path-format=absolute", "--git-path", "index").decode().strip())
+            before_index = hashlib.sha256(index_path.read_bytes()).hexdigest()
+            head = git(root, "rev-parse", "HEAD").decode().strip()
+            assert head == FROZEN[name], (name, head)
+            staged_raw = git(root, "ls-files", "--stage", "-z")
+            staged = {}
+            for item in staged_raw.split(b"\0"):
+                if not item:
+                    continue
+                meta, raw_path = item.split(b"\t", 1)
+                mode, oid, stage = meta.decode().split()
+                assert stage == "0"
+                staged[raw_path.decode()] = (mode, oid)
+            status = git(root, "status", "--porcelain=v2", "--untracked-files=all").decode()
+            common = {"repository": name, "phase": phase}
+            mismatch = []
+            count = 0
+            for item in git(root, "ls-tree", "-rz", "HEAD").split(b"\0"):
+                if not item:
+                    continue
+                meta, raw_path = item.split(b"\t", 1)
+                mode, kind, oid = meta.decode().split()
+                path = raw_path.decode()
+                assert kind == "blob", (path, kind)
+                committed = git(root, "cat-file", "blob", oid)
+                raw = (root / path).read_bytes()
+                filtered = git(root, "hash-object", "--", path).decode().strip()
+                unfiltered = git(root, "hash-object", "--no-filters", "--", path).decode().strip()
+                attrs = git(root, "check-attr", "--all", "--", path).decode()
+                equal = raw == committed
+                if equal:
+                    classification = "BYTE_IDENTICAL"
+                elif raw.replace(b"\r\n", b"\n") == committed.replace(b"\r\n", b"\n"):
+                    classification = "LF_VS_CRLF_ONLY"
+                elif raw.removeprefix(b"\xef\xbb\xbf") == committed.removeprefix(b"\xef\xbb\xbf"):
+                    classification = "BOM_DIFFERENCE"
+                elif raw.rstrip(b"\r\n") == committed.rstrip(b"\r\n"):
+                    classification = "TRAILING_NEWLINE_DIFFERENCE"
+                else:
+                    classification = "ACTUAL_CONTENT_DIFFERENCE"
+                record = dict(common, path=path, head_oid=oid, index_oid=staged[path][1],
+                              filtered_worktree_hash=filtered, raw_worktree_hash=unfiltered,
+                              head_mode=mode, index_mode=staged[path][0], attributes=attrs,
+                              porcelain_v2=status, byte_classification=classification,
+                              committed=stats(committed), worktree=stats(raw),
+                              crlf_normalized_equal=raw.replace(b"\r\n", b"\n") == committed.replace(b"\r\n", b"\n"))
+                if not equal:
+                    mismatch.append(path)
+                emit("PATH", record)
+                count += 1
+            result = dict(common, head=head, tree=git(root, "rev-parse", "HEAD^{tree}").decode().strip(),
+                          root=str(root), path_count=count, mismatch_paths=mismatch,
+                          status=status, diff_raw=git(root, "diff", "--raw").decode(),
+                          diff_cached_raw=git(root, "diff", "--cached", "--raw").decode(),
+                          ls_files_stage=staged_raw.decode().replace("\0", "\n"),
+                          config=git(root, "config", "--show-origin", "--get-regexp",
+                                     r"^core\.(autocrlf|eol|safecrlf|filemode)$", allowed=(0, 1)).decode(),
+                          git_env={k:v for k,v in os.environ.items() if k.startswith("GIT_CONFIG_")},
+                          index_sha256_before=before_index,
+                          index_sha256_after=hashlib.sha256(index_path.read_bytes()).hexdigest(),
+                          python=sys.version, git_version=git(root, "--version").decode().strip(),
+                          platform=platform.platform(), image=os.environ.get("ImageOS"),
+                          image_version=os.environ.get("ImageVersion"))
+            assert result["index_sha256_before"] == result["index_sha256_after"], "Observation modified index"
+            emit("REPOSITORY", result)
+
+
+        def invoke():
+            # Synthetic fixed event is used only to reproduce the historical byte failure.
+            # This diagnostic does not certify anything and has no required-check authority.
+            event = {"number": 21, "pull_request": {
+                "state": "open", "merged": False, "draft": False,
+                "base": {"ref": "main", "sha": FROZEN["protected"],
+                         "repo": {"full_name": "KiloAlpha021/security-policy"}},
+                "head": {"sha": FROZEN["pr21"], "repo": {"full_name": "KiloAlpha021/security-policy"}}}}
+            event_path = Path(os.environ["RUNNER_TEMP"]) / "f7-byte-diagnostic-event.json"
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            env = dict(os.environ)
+            env.update(GITHUB_EVENT_NAME="pull_request", GITHUB_REPOSITORY="KiloAlpha021/security-policy",
+                       GITHUB_SHA=FROZEN["candidate"], GITHUB_WORKFLOW_SHA=FROZEN["witness"],
+                       GITHUB_EVENT_PATH=str(event_path),
+                       GITHUB_WORKFLOW_REF="KiloAlpha021/security-workflows/.github/workflows/security-policy-maintenance.yml@refs/heads/f7-policy-maintenance-certifier-v4")
+            args = [sys.executable, "-I", "-S", "-B", "witness/maintenance/witness.py", "protected", "pr21", "candidate"]
+            result = subprocess.run(args, env=env, capture_output=True, text=True)
+            emit("WITNESS", {"authority": "NONE; synthetic fixed diagnostic event only",
+                             "command": args, "returncode": result.returncode,
+                             "stdout": result.stdout, "stderr": result.stderr})
+            sys.exit(result.returncode)
+
+
+        if sys.argv[1] == "snapshot":
+            snapshot(sys.argv[2], sys.argv[3])
+        elif sys.argv[1] == "invoke":
+            invoke()
+        else:
+            raise SystemExit("Unknown diagnostic mode")
+
+        '@
+        $path = Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py'
+        [System.IO.File]::WriteAllText($path, $source, [System.Text.UTF8Encoding]::new($false))
+    - name: Check out exact witness
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        repository: KiloAlpha021/security-workflows
+        ref: 737163e87eef8c61f16d3abb995f5fbcfd25616b
+        path: witness
+        persist-credentials: false
+        fetch-depth: 0
+      env:
+        GIT_CONFIG_COUNT: '1'
+        GIT_CONFIG_KEY_0: core.autocrlf
+        GIT_CONFIG_VALUE_0: 'false'
+    - name: Observe A immediately after checkout - witness
+      shell: pwsh
+      run: |
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot witness A
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Check out exact protected
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        repository: KiloAlpha021/security-policy
+        ref: 416b6fded406e6d2ff425e3192885f2dc3341900
+        path: protected
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Observe A immediately after checkout - protected
+      shell: pwsh
+      run: |
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot protected A
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Check out exact pr21
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        repository: KiloAlpha021/security-policy
+        ref: 91a4d6c156b635ddf2ce153c71a7a10042a6f9c7
+        path: pr21
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Observe A immediately after checkout - pr21
+      shell: pwsh
+      run: |
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot pr21 A
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Check out exact candidate
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        repository: KiloAlpha021/security-policy
+        ref: ec6106b7ff7eb717c86714d70d7d7aaad695a165
+        path: candidate
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Observe A immediately after checkout - candidate
+      shell: pwsh
+      run: |
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot candidate A
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Exact production preflight then observe B - witness
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        git -C witness -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot witness B
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Exact production preflight then observe B - protected
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        git -C protected -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot protected B
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Exact production preflight then observe B - pr21
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        git -C pr21 -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot pr21 B
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Exact production preflight then observe B - candidate
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        git -C candidate -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot candidate B
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Observe C then invoke unchanged V4 witness - diagnostic only
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot witness C
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot protected C
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot pr21 C
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') snapshot candidate C
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        python -I -S -B (Join-Path $env:RUNNER_TEMP 'f7-byte-observer.py') invoke
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
