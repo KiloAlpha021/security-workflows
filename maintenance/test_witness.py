@@ -35,6 +35,29 @@ class WitnessTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.temporary.cleanup()
 
+    def test_previous_finite_tuple_is_historical_only(self):
+        source = Path(__file__).resolve().parent.parent
+        predecessor = "54231482b51a8679b1a6de5398bb3160402d6b21"
+        self.assertEqual(witness.git(source, "rev-parse", predecessor + "^{tree}")
+                         .decode().strip(), "b7bef141addf23c87c794abef20e18b3f20556e8")
+        old = witness.git(source, "show", predecessor + ":maintenance/witness.py")
+        self.assertIn(b'HEAD = "594e34d4f997e48dac7de292164b498fc0ca3eb8"', old)
+        with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
+            witness.verify(self.base, self.candidate,
+                           "594e34d4f997e48dac7de292164b498fc0ca3eb8",
+                           "ba9875f469b58b98f8ad7e1e288227e85f0abc1d",
+                           "948e644d853ff8de873014f7f5fb945a7408bed0")
+
+    def test_each_expected_sha256_is_independently_bound(self):
+        for path, (blob, _digest) in witness.EXPECTED_FILES.items():
+            changed = dict(witness.EXPECTED_FILES)
+            changed[path] = (blob, "0" * 64)
+            with self.subTest(path=path), mock.patch.object(
+                    witness, "EXPECTED_FILES", changed), mock.patch.object(
+                    witness, "clean_committed_root"), self.assertRaisesRegex(
+                    witness.Rejected, "candidate byte substitution"):
+                witness.verify(self.base, self.candidate)
+
     def test_exact_finite_candidate_admitted(self):
         result = witness.verify(self.base, self.candidate)
         self.assertEqual(result["result"], "EXACT_FINITE_BINDING_PASS")
@@ -397,7 +420,7 @@ def run_policy(root: Path) -> None:
     os.environ.update(witness.ENV)
     suite = unittest.defaultTestLoader.discover(str(root), pattern="test_verify_security_workflows.py")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    witness.require(result.wasSuccessful() and result.testsRun == 130, "policy suite incomplete/failed")
+    witness.require(result.wasSuccessful() and result.testsRun == 131, "policy suite incomplete/failed")
     witness.require({test.id() for test, _reason in result.skipped} == witness.ALLOWED_SKIPS,
                     "unexpected skip set")
     witness.require(len(result.skipped) == 2 and not result.expectedFailures
