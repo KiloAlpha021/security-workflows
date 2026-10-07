@@ -21,113 +21,184 @@ class WitnessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = Path(os.environ["WITNESS_POLICY_REPO"]).resolve(strict=True)
-        cls.original = witness.git(cls.source, "show", f"{witness.BASE}:{witness.TEST_PATH}")
-        cls.expected = witness.projected_tests(cls.original)
-        cls.temporary = tempfile.TemporaryDirectory(prefix="independent-witness-")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="finite-witness-")
         cls.root = Path(cls.temporary.name).resolve(strict=True)
-        for name in ("base", "candidate"):
+        for name, revision in (("base", witness.BASE), ("candidate", witness.HEAD)):
             path = cls.root / name
             subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "--quiet",
                             "--no-hardlinks", "--no-checkout", str(cls.source), str(path)], check=True)
-            witness.git(path, "-c", "core.autocrlf=false", "checkout", "--detach", witness.BASE)
+            witness.git(path, "-c", "core.autocrlf=false", "checkout", "--detach", revision)
             witness.git(path, "remote", "set-url", "origin", "https://github.com/" + witness.TARGET)
-        cls.base = cls.root / "base"
-        cls.candidate = cls.root / "candidate"
-        (cls.candidate / witness.TEST_PATH).write_bytes(cls.expected)
-        witness.git(cls.candidate, "-c", "core.autocrlf=false", "add", witness.TEST_PATH)
-        witness.git(cls.candidate, "-c", "user.name=Witness Fixture",
-                    "-c", "user.email=witness@example.invalid", "commit", "-m", "SIMULATION ONLY")
-        cls.head = witness.git(cls.candidate, "rev-parse", "HEAD").decode().strip()
-        cls.tree = witness.git(cls.candidate, "rev-parse", "HEAD^{tree}").decode().strip()
+        cls.base, cls.candidate = cls.root / "base", cls.root / "candidate"
 
     @classmethod
     def tearDownClass(cls):
         cls.temporary.cleanup()
 
-    def test_exact_projection_admitted(self):
-        result = witness.verify(self.base, self.candidate, self.head, self.tree)
-        self.assertEqual(result["changed_paths"], [witness.TEST_PATH])
+    def test_exact_finite_candidate_admitted(self):
+        result = witness.verify(self.base, self.candidate)
+        self.assertEqual(result["result"], "EXACT_FINITE_BINDING_PASS")
+        self.assertEqual(result["files"], witness.EXPECTED_FILES)
+        self.assertEqual(result["parent"], witness.BASE)
+        self.assertEqual(result["commits"], 1)
 
-    def test_fourth_projection_only_prevents_isolated_probe_bytecode(self):
-        before = b'[os.sys.executable, "-I", "-S", "-c",'
-        after = b'[os.sys.executable, "-I", "-S", "-B", "-c",'
-        self.assertEqual(self.expected.count(after), 1)
-        prior_projection = self.expected.replace(after, before, 1)
-        self.assertEqual(hashlib.sha256(prior_projection).hexdigest(),
-                         "13e0448a564d4d16d3d016e7559ccfd0ab5c057299af86a4fe059d2372d227f3")
-        original = witness.git
-        for replacement in (before, after.replace(b'"-B"', b'"-E"')):
-            payload = self.expected.replace(after, replacement, 1)
+    def test_independent_immutable_argument_substitutions(self):
+        for index in range(3):
+            for wrong in ("0" * 40, "main", "HEAD", "refs/heads/main", witness.SOURCE):
+                values = [witness.HEAD, witness.HEAD_TREE, witness.BASE]
+                values[index] = wrong
+                with self.subTest(index=index, wrong=wrong), self.assertRaisesRegex(
+                        witness.Rejected, "finite identity"):
+                    witness.verify(self.base, self.candidate, *values)
+
+    def test_trees_parent_count_and_every_path_are_independently_bound(self):
+        cone = "".join("M\t" + path + "\n" for path in sorted(witness.EXPECTED_FILES)).encode()
+        cases = [
+            (self.base, ("rev-parse", "HEAD^{tree}"), b"0" * 40 + b"\n", "tree substitution"),
+            (self.candidate, ("rev-parse", "HEAD^{tree}"), b"0" * 40 + b"\n", "tree substitution"),
+            (self.candidate, ("rev-list", "--parents", "-n", "1", witness.HEAD),
+             f"{witness.HEAD} {'0' * 40}\n".encode(), "sole parent"),
+        ]
+        for parents in ([], [witness.BASE, witness.BASE]):
+            cases.append((self.candidate, ("rev-list", "--parents", "-n", "1", witness.HEAD),
+                          (" ".join([witness.HEAD, *parents]) + "\n").encode(), "sole parent"))
+        for count in (b"0\n", b"2\n"):
+            cases.append((self.candidate, ("rev-list", "--count", f"{witness.BASE}..{witness.HEAD}"),
+                          count, "commit count"))
+        diff = ("diff", "--name-status", "--no-renames", witness.BASE, witness.HEAD)
+        for path in witness.EXPECTED_FILES:
+            line = ("M\t" + path + "\n").encode()
+            for response in (cone.replace(line, b""), cone.replace(line, b"M\tunauthorized.py\n"),
+                             cone.replace(line, line.replace(b"M\t", b"A\t"))):
+                cases.append((self.candidate, diff, response, "changed path"))
+        cases.append((self.candidate, diff, cone + b"M\textra.py\n", "changed path"))
+        real = witness.git
+        for target, command, response, message in cases:
             def changed(root, *args):
-                if root == self.candidate and args == ("show", f"{self.head}:{witness.TEST_PATH}"):
-                    return payload
-                return original(root, *args)
-            with self.subTest(replacement=replacement), mock.patch.object(
-                    witness, "git", side_effect=changed), self.assertRaisesRegex(
-                    witness.Rejected, "differ from independent oracle"):
-                witness.verify(self.base, self.candidate, self.head, self.tree)
+                return response if root == target and args == command else real(root, *args)
+            # Isolate each binding's oracle; the positive and physical mutation
+            # tests exercise the real clean-root verifier independently.
+            with self.subTest(command=command, response=response), mock.patch.object(
+                    witness, "clean_committed_root"), mock.patch.object(
+                    witness, "git", side_effect=changed), self.assertRaisesRegex(witness.Rejected, message):
+                witness.verify(self.base, self.candidate)
 
-    def test_post_test_bytecode_residue_remains_rejected(self):
-        original = witness.git
-        def dirty(root, *args):
-            if root == self.candidate and args == ("status", "--porcelain", "--untracked-files=all"):
-                return b"?? __pycache__/protected_policy_bootstrap.cpython-312.pyc\n"
-            return original(root, *args)
-        with mock.patch.object(witness, "git", side_effect=dirty), self.assertRaisesRegex(
-                witness.Rejected, "dirty checkout"):
-            witness.verify(self.base, self.candidate, self.head, self.tree)
+    def test_each_candidate_blob_and_bytes_are_independently_bound(self):
+        real = witness.git
+        for path, (blob, _digest) in witness.EXPECTED_FILES.items():
+            for command, response, message in (
+                    (("rev-parse", f"{witness.HEAD}:{path}"), b"0" * 40 + b"\n", "blob substitution"),
+                    (("cat-file", "blob", blob), b"replacement\n", "byte substitution")):
+                def changed(root, *args):
+                    return response if root == self.candidate and args == command else real(root, *args)
+                with self.subTest(path=path, command=command), mock.patch.object(
+                        witness, "clean_committed_root"), mock.patch.object(
+                        witness, "git", side_effect=changed), self.assertRaisesRegex(witness.Rejected, message):
+                    witness.verify(self.base, self.candidate)
 
-    def test_wrong_sha_base_tree_and_mutable_id_rejected(self):
-        cases = [("0" * 40, self.tree, witness.BASE),
-                 (self.head, "0" * 40, witness.BASE),
-                 (self.head, self.tree, "0" * 40),
-                 ("main", self.tree, witness.BASE)]
-        for head, tree, base in cases:
-            with self.subTest(head=head, tree=tree, base=base), self.assertRaises(witness.Rejected):
-                witness.verify(self.base, self.candidate, head, tree, base)
-
-    def test_candidate_assertion_removal_and_historical_rewrite_rejected(self):
-        path = self.candidate / witness.TEST_PATH
-        for payload in (self.expected.replace(b"self.assertEqual", b"self.assertNotEqual", 1),
-                        self.expected.replace(b"f8f41127efe2c27cc7ba8f3132754b5c363636a1", b"0" * 40),
-                        self.expected + b"\n# candidate-selected certification\n"):
+    def test_tracked_mutation_and_raw_checkout_transformation_rejected(self):
+        for relative in witness.EXPECTED_FILES:
+            path = self.candidate / relative
+            original = path.read_bytes()
             try:
-                path.write_bytes(payload)
-                with self.assertRaises(witness.Rejected):
-                    witness.verify(self.base, self.candidate, self.head, self.tree)
+                for changed in (original + b"# unauthorized\n", original.replace(b"\n", b"\r\n"),
+                                b"\xef\xbb\xbf" + original, original + b"\0"):
+                    path.write_bytes(changed)
+                    with self.subTest(path=relative), self.assertRaises(witness.Rejected):
+                        witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
             finally:
-                path.write_bytes(self.expected)
+                path.write_bytes(original)
 
-    def test_unauthorized_file_and_certifier_injection_rejected(self):
-        path = self.candidate / "witness.py"
+    def test_untracked_bytecode_empty_cache_and_self_certification_rejected(self):
+        for relative in ("extra.txt", "injected.pyc", "__pycache__/injected.pyc", "maintenance/witness.py"):
+            path = self.candidate / relative
+            created = not path.parent.exists()
+            path.parent.mkdir(exist_ok=True)
+            try:
+                path.write_bytes(b"candidate controlled\n")
+                with self.subTest(path=relative), self.assertRaises(witness.Rejected):
+                    witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
+            finally:
+                path.unlink()
+                if created:
+                    path.parent.rmdir()
+        cache = self.candidate / "__pycache__"
+        cache.mkdir()
         try:
-            path.write_text("raise SystemExit(0)\n", encoding="utf-8")
-            with self.assertRaises(witness.Rejected):
-                witness.verify(self.base, self.candidate, self.head, self.tree)
+            with self.assertRaisesRegex(witness.Rejected, "bytecode residue"):
+                witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
         finally:
-            path.unlink()
+            cache.rmdir()
 
-    def test_committed_foreign_path_and_wrong_parent_rejected(self):
-        original = witness.git
-        for command, response in (
-                (("diff", "--name-status", "--no-renames", witness.BASE, self.head),
-                 b"M\tprotected_policy_bootstrap.py\n"),
-                (("rev-list", "--parents", "-n", "1", self.head),
-                 f"{self.head} {witness.BASE} {witness.BASE}\n".encode())):
+    def test_root_separation_repository_and_checkout_rejection(self):
+        for roots in ((self.base, self.base), (self.base, self.base / "nested")):
+            with self.assertRaisesRegex(witness.Rejected, "root separation"):
+                witness.separate_roots(*roots)
+        real = witness.git
+        for command, response in ((("remote", "get-url", "origin"), b"https://github.com/other/repo\n"),
+                                  (("rev-parse", "HEAD"), b"0" * 40 + b"\n")):
             def changed(root, *args):
-                return response if args == command else original(root, *args)
+                return response if args == command else real(root, *args)
             with mock.patch.object(witness, "git", side_effect=changed), self.assertRaises(witness.Rejected):
-                witness.verify(self.base, self.candidate, self.head, self.tree)
+                witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
 
-    def test_committed_assertion_or_manifest_substitution_rejected(self):
-        original = witness.git
-        for replacement in (b"", self.expected.replace(b"self.assertEqual", b"self.assertNotEqual", 1)):
-            def changed(root, *args):
-                if root == self.candidate and args == ("show", f"{self.head}:{witness.TEST_PATH}"):
-                    return replacement
-                return original(root, *args)
-            with mock.patch.object(witness, "git", side_effect=changed), self.assertRaises(witness.Rejected):
-                witness.verify(self.base, self.candidate, self.head, self.tree)
+    def test_event_has_no_candidate_selected_authority(self):
+        event = {"pull_request": {
+            "base": {"repo": {"full_name": witness.TARGET}, "ref": "main", "sha": witness.BASE},
+            "head": {"repo": {"full_name": witness.TARGET}, "sha": witness.HEAD},
+            "state": "open", "merged": False, "draft": False}}
+        self.assertEqual(witness.validate_event(event, "pull_request", witness.TARGET),
+                         (witness.HEAD, witness.BASE))
+        for part, key, value in (("base", "sha", "0" * 40), ("base", "ref", "other"),
+                                 ("head", "sha", "main"), ("head", "sha", "0" * 40)):
+            changed = copy.deepcopy(event)
+            changed["pull_request"][part][key] = value
+            with self.assertRaises(witness.Rejected):
+                witness.validate_event(changed, "pull_request", witness.TARGET)
+        for part in ("base", "head"):
+            changed = copy.deepcopy(event)
+            changed["pull_request"][part]["repo"]["full_name"] = witness.SOURCE
+            with self.assertRaises(witness.Rejected):
+                witness.validate_event(changed, "pull_request", witness.TARGET)
+        for key, value in (("draft", True), ("merged", True), ("state", "closed")):
+            changed = copy.deepcopy(event)
+            changed["pull_request"][key] = value
+            with self.assertRaises(witness.Rejected):
+                witness.validate_event(changed, "pull_request", witness.TARGET)
+        for name, repository in (("merge_group", witness.TARGET), ("push", witness.TARGET),
+                                 ("pull_request", witness.SOURCE)):
+            with self.assertRaises(witness.Rejected):
+                witness.validate_event(event, name, repository)
+
+    def test_canonical_mutations_rejected(self):
+        witness.canonical(b"canonical\n")
+        for raw in (b"CR\r\n", b"\xef\xbb\xbfBOM\n", b"NUL\0\n", b"no newline", b"two\n\n", b"\xff\n"):
+            with self.subTest(raw=raw), self.assertRaises((witness.Rejected, UnicodeError)):
+                witness.canonical(raw)
+
+    def test_historical_authority_and_assertions_cannot_be_rewritten(self):
+        path = self.candidate / "test_verify_security_workflows.py"
+        original = path.read_bytes()
+        try:
+            for before, after in ((b"f8f41127efe2c27cc7ba8f3132754b5c363636a1", b"0" * 40),
+                                  (b'"-I", "-S", "-B"', b'"-I", "-S"')):
+                changed = original.replace(before, after)
+                self.assertNotEqual(changed, original)
+                path.write_bytes(changed)
+                with self.assertRaises(witness.Rejected):
+                    witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
+        finally:
+            path.write_bytes(original)
+
+    def test_r3c_is_historical_not_successor_authority(self):
+        source = Path(__file__).resolve().parent.parent
+        current = (source / "maintenance/witness.py").read_text()
+        for obsolete in ("R3C_", "validate_r3c_event", "verify_r3c", "projected_tests", 'event["number"]'):
+            self.assertNotIn(obsolete, current)
+        old = witness.git(source, "show", "737163e87eef8c61f16d3abb995f5fbcfd25616b:maintenance/witness.py")
+        self.assertIn(b"verify_r3c", old)
+        self.assertEqual(witness.git(source, "rev-parse", "737163e87eef8c61f16d3abb995f5fbcfd25616b^{tree}")
+                         .decode().strip(), "a8af4462e3affade01fbebad00f362e3ef147be9")
 
     def test_workflow_is_finite_readonly_and_guards_native_failures(self):
         workflow = Path(__file__).resolve().parent.parent / witness.WORKFLOW
@@ -139,9 +210,9 @@ class WitnessTests(unittest.TestCase):
                           "pull_request_target:", "checks: write", "contents: write"):
             self.assertNotIn(forbidden, text)
         self.assertIn("ref: ${{ github.workflow_sha }}", text)
-        self.assertIn("ref: " + witness.R3C_BASE, text)
-        self.assertIn("ref: ${{ github.sha }}", text)
-        self.assertIn("path: pr21", text)
+        self.assertIn("ref: " + witness.BASE, text)
+        self.assertIn("ref: " + witness.HEAD, text)
+        self.assertNotIn("pr21", text)
         lines = text.splitlines()
         commands = 0
         for index, line in enumerate(lines):
@@ -149,7 +220,7 @@ class WitnessTests(unittest.TestCase):
                 commands += 1
                 self.assertEqual(lines[index + 1].strip(),
                                  "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }")
-        self.assertEqual(commands, 16)
+        self.assertEqual(commands, 15)
 
     def test_preflight_restoration_updates_index_without_environment_expansion(self):
         text = (Path(__file__).resolve().parent.parent / witness.WORKFLOW).read_text()
@@ -160,17 +231,17 @@ class WitnessTests(unittest.TestCase):
             expected = [
                 f"          git -C {root} -c core.autocrlf=false -c core.eol=lf "
                 "checkout-index --index --all --force"
-                for root in ("witness", "protected", "pr21", "candidate")
+                for root in ("witness", "protected", "candidate")
             ]
             commands = [line for line in step.splitlines() if "checkout-index" in line]
             self.assertEqual(commands, expected)
             self.assertNotIn("GIT_CONFIG_", step)
             self.assertIn(
-                "          python -I -S -B witness/maintenance/witness.py protected pr21 candidate",
+                "          python -I -S -B witness/maintenance/witness.py protected candidate",
                 step,
             )
         require_preflight_contract(text)
-        for root in ("witness", "protected", "pr21", "candidate"):
+        for root in ("witness", "protected", "candidate"):
             original = (f"git -C {root} -c core.autocrlf=false -c core.eol=lf "
                         "checkout-index --index --all --force")
             for replacement in (
@@ -222,31 +293,6 @@ class WitnessTests(unittest.TestCase):
             revision = witness.git(checkout, "rev-parse", "HEAD").decode().strip()
             witness.clean_committed_root(checkout, revision, witness.SOURCE)
 
-    def test_event_binding_rejects_candidate_selection(self):
-        event = {"pull_request": {"base": {"repo": {"full_name": witness.TARGET},
-                 "ref": "main", "sha": witness.BASE}, "head": {
-                 "repo": {"full_name": witness.TARGET}, "sha": self.head},
-                 "merged": False, "state": "open"}}
-        self.assertEqual(witness.validate_event(event, "pull_request", witness.TARGET),
-                         (self.head, witness.BASE))
-        for part, key, value in (("base", "sha", "0" * 40), ("base", "ref", "other"),
-                                 ("head", "sha", "main")):
-            mutated = copy.deepcopy(event)
-            mutated["pull_request"][part][key] = value
-            with self.assertRaises(witness.Rejected):
-                witness.validate_event(mutated, "pull_request", witness.TARGET)
-        for name, repository in (("workflow_dispatch", witness.TARGET),
-                                 ("pull_request", witness.SOURCE)):
-            with self.assertRaises(witness.Rejected):
-                witness.validate_event(event, name, repository)
-
-    def test_base_oracle_and_canonical_mutations_rejected(self):
-        with self.assertRaises(witness.Rejected):
-            witness.projected_tests(self.original + b"\n")
-        for payload in (b"a\r\n", b"\xef\xbb\xbfa\n", b"a\0\n", b"a", b"a\n\n"):
-            with self.assertRaises(witness.Rejected):
-                witness.canonical(payload)
-
     def test_independent_source_cannot_be_selected_by_candidate(self):
         root = Path(__file__).resolve().parent.parent
         actual = witness.git(root, "rev-parse", "HEAD").decode().strip()
@@ -254,9 +300,57 @@ class WitnessTests(unittest.TestCase):
         witness.validate_source(root, valid_ref, actual)
         for ref, revision in ((valid_ref, "main"), (valid_ref, "0" * 40),
                               (valid_ref.replace(witness.SOURCE, witness.TARGET), actual),
-                              (valid_ref.replace(witness.SOURCE_BRANCH, "main"), actual)):
+                              (valid_ref.replace(witness.SOURCE_BRANCH, "main"), actual),
+                              (valid_ref.replace(witness.WORKFLOW, "other.yml"), actual)):
             with self.assertRaises(witness.Rejected):
                 witness.validate_source(root, ref, revision)
+
+    def test_locked_pipeline_and_finite_checkout_contract(self):
+        import yaml
+        source = Path(__file__).resolve().parent.parent
+        document = yaml.load((source / witness.WORKFLOW).read_text(), Loader=yaml.BaseLoader)
+        job = document["jobs"]["independent-maintenance"]
+        self.assertEqual(document["permissions"], {"contents": "read"})
+        self.assertEqual(job["runs-on"], "windows-latest")
+        steps = job["steps"]
+        expected_roots = ((witness.SOURCE, "${{ github.workflow_sha }}", "witness"),
+                          (witness.TARGET, witness.BASE, "protected"),
+                          (witness.TARGET, witness.HEAD, "candidate"))
+        for step, (repo, ref, path) in zip(steps[:3], expected_roots):
+            self.assertEqual(step["uses"], "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683")
+            self.assertEqual(step["with"], {"repository": repo, "ref": ref, "path": path,
+                                         "persist-credentials": "false", "fetch-depth": "0"})
+        self.assertEqual(steps[3]["with"], {"python-version": "3.12.10"})
+        names = [step["name"] for step in steps]
+        self.assertEqual(names[4:], [
+            "Restore committed representations and verify independent bindings",
+            "Install independently pinned policy environment",
+            "Independent adversarial witness tests",
+            "Full admitted policy compatibility and adversarial suite",
+            "Audit independently pinned dependencies"])
+        prior = yaml.load(witness.git(source, "show",
+                         "737163e87eef8c61f16d3abb995f5fbcfd25616b:" + witness.WORKFLOW),
+                         Loader=yaml.BaseLoader)
+        old_steps = {s["name"]: s for s in prior["jobs"]["independent-maintenance"]["steps"]}
+        for step in (steps[3], steps[5], steps[8]):
+            self.assertEqual(step, old_steps[step["name"]])
+        self.assertEqual(steps[6]["env"], {**witness.ENV,
+                         "WITNESS_POLICY_REPO": "${{ github.workspace }}/candidate"})
+        full = steps[7]["run"]
+        self.assertLess(full.index("run-policy candidate"), full.index("witness.py protected candidate"))
+        self.assertIn("-I -S -B witness/maintenance/witness.py protected candidate", full)
+        for step in steps:
+            self.assertNotIn("if", step)
+            self.assertNotIn("continue-on-error", step)
+
+    def test_integrity_failure_propagates(self):
+        real = witness.git
+        def broken(root, *args):
+            if args == ("fsck", "--no-dangling", "--no-reflogs"):
+                raise subprocess.CalledProcessError(1, ["git", *args])
+            return real(root, *args)
+        with mock.patch.object(witness, "git", side_effect=broken), self.assertRaises(subprocess.CalledProcessError):
+            witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
 
     def test_native_failures_cannot_be_masked(self):
         for fail in (0, 1, 2, None):
@@ -297,122 +391,13 @@ class WitnessTests(unittest.TestCase):
                 alias.unlink()
 
 
-class R3CBindingTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.temporary = tempfile.TemporaryDirectory(prefix="r3c-binding-")
-        cls.root = Path(cls.temporary.name).resolve(strict=True)
-        source = Path(os.environ["WITNESS_R3C_REPO"]).resolve(strict=True)
-        cls.roots = []
-        for name, revision in (("base", witness.R3C_BASE), ("head", witness.R3C_HEAD),
-                               ("evaluation", witness.R3C_EVALUATION)):
-            path = cls.root / name
-            subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "--quiet",
-                            "--no-hardlinks", "--no-checkout", str(source), str(path)], check=True)
-            witness.git(path, "-c", "core.autocrlf=false", "checkout", "--detach", revision)
-            witness.git(path, "remote", "set-url", "origin", "https://github.com/" + witness.TARGET)
-            cls.roots.append(path)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.temporary.cleanup()
-
-    def test_exact_r3c_composition_admitted(self):
-        result = witness.verify_r3c(*self.roots)
-        self.assertEqual(result["result"], "R3C_IDENTITY_AND_PRESERVATION_PASS")
-
-    def test_base_head_evaluation_and_mutable_substitution_rejected(self):
-        for index in range(3):
-            for invalid in ("0" * 40, "main", witness.BASE):
-                values = [witness.R3C_BASE, witness.R3C_HEAD, witness.R3C_EVALUATION]
-                values[index] = invalid
-                with self.subTest(index=index, invalid=invalid), self.assertRaises(witness.Rejected):
-                    witness.verify_r3c(*self.roots, *values)
-
-    def test_exact_event_and_candidate_certifier_selection_boundary(self):
-        event = {"number": 21, "pull_request": {
-            "state": "open", "draft": False, "merged": False,
-            "base": {"repo": {"full_name": witness.TARGET}, "ref": "main", "sha": witness.R3C_BASE},
-            "head": {"repo": {"full_name": witness.TARGET}, "sha": witness.R3C_HEAD}}}
-        expected = (witness.R3C_BASE, witness.R3C_HEAD, witness.R3C_EVALUATION)
-        self.assertEqual(witness.validate_r3c_event(
-            event, "pull_request", witness.TARGET, witness.R3C_EVALUATION), expected)
-        historical_metadata = copy.deepcopy(event)
-        historical_metadata["pull_request"]["base"]["sha"] = witness.BASE
-        self.assertEqual(witness.validate_r3c_event(
-            historical_metadata, "pull_request", witness.TARGET, witness.R3C_EVALUATION), expected)
-        for part, key, invalid in (("base", "sha", "0" * 40), ("base", "ref", "other"),
-                                   ("head", "sha", witness.R3C_PREDECESSOR)):
-            changed = copy.deepcopy(event)
-            changed["pull_request"][part][key] = invalid
-            with self.assertRaises(witness.Rejected):
-                witness.validate_r3c_event(changed, "pull_request", witness.TARGET, witness.R3C_EVALUATION)
-        for name, repository, evaluation in (("merge_group", witness.TARGET, witness.R3C_EVALUATION),
-                ("pull_request", witness.SOURCE, witness.R3C_EVALUATION),
-                ("pull_request", witness.TARGET, "main")):
-            with self.assertRaises(witness.Rejected):
-                witness.validate_r3c_event(event, name, repository, evaluation)
-        source = Path(__file__).resolve().parent.parent
-        revision = witness.git(source, "rev-parse", "HEAD").decode().strip()
-        reference = f"{witness.SOURCE}/{witness.WORKFLOW}@refs/heads/{witness.SOURCE_BRANCH}"
-        witness.validate_source(source, reference, revision)
-        for ref, sha in ((reference, "0" * 40), (reference.replace(witness.SOURCE_BRANCH, "main"), revision),
-                         (reference.replace(witness.SOURCE, witness.TARGET), revision)):
-            with self.assertRaises(witness.Rejected):
-                witness.validate_source(source, ref, sha)
-
-    def test_wrong_tree_parents_and_cone_rejected(self):
-        original = witness.git
-        evaluation = self.roots[2]
-        cases = [
-            (("rev-parse", "HEAD^{tree}"), b"0" * 40 + b"\n"),
-            (("rev-list", "--parents", "-n", "1", witness.R3C_EVALUATION),
-             f"{witness.R3C_EVALUATION} {witness.R3C_HEAD} {witness.R3C_BASE}\n".encode()),
-            (("diff", "--name-status", "--no-renames", witness.R3C_BASE, witness.R3C_EVALUATION),
-             b"M\tprotected_policy_bootstrap.py\n"),
-        ]
-        for command, response in cases:
-            def changed(root, *args):
-                return response if root == evaluation and args == command else original(root, *args)
-            with self.subTest(command=command), mock.patch.object(witness, "git", side_effect=changed), \
-                 self.assertRaises(witness.Rejected):
-                witness.verify_r3c(*self.roots)
-
-    def test_dirty_bytecode_and_self_certification_files_rejected(self):
-        evaluation = self.roots[2]
-        for relative in ("__pycache__/injected.pyc", "maintenance/witness.py"):
-            path = evaluation / relative
-            path.parent.mkdir(exist_ok=True)
-            try:
-                path.write_bytes(b"candidate-controlled\n")
-                with self.assertRaises(witness.Rejected):
-                    witness.verify_r3c(*self.roots)
-            finally:
-                path.unlink()
-                path.parent.rmdir()
-
-    def test_r3b_method_or_historical_identity_rewrite_rejected(self):
-        evaluation = self.roots[2]
-        path = evaluation / witness.TEST_PATH
-        original = path.read_bytes()
-        try:
-            for changed in (original.replace(b'"-I", "-S", "-B"', b'"-I", "-S"', 1),
-                            original.replace(b"f8f41127efe2c27cc7ba8f3132754b5c363636a1", b"0" * 40)):
-                self.assertNotEqual(changed, original)
-                path.write_bytes(changed)
-                with self.assertRaises(witness.Rejected):
-                    witness.verify_r3c(*self.roots)
-        finally:
-            path.write_bytes(original)
-
-
 def run_policy(root: Path) -> None:
     root = root.resolve(strict=True)
     sys.path.insert(0, str(root))
     os.environ.update(witness.ENV)
     suite = unittest.defaultTestLoader.discover(str(root), pattern="test_verify_security_workflows.py")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    witness.require(result.wasSuccessful() and result.testsRun == 126, "policy suite incomplete/failed")
+    witness.require(result.wasSuccessful() and result.testsRun == 130, "policy suite incomplete/failed")
     witness.require({test.id() for test, _reason in result.skipped} == witness.ALLOWED_SKIPS,
                     "unexpected skip set")
     witness.require(len(result.skipped) == 2 and not result.expectedFailures
