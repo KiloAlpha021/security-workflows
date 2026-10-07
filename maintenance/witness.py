@@ -17,7 +17,7 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "f7-policy-maintenance-certifier-v2"
+SOURCE_BRANCH = "f7-policy-maintenance-certifier-v3"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
 BASE = "c047a203fc7e1e3326e044f128a7323dea60041b"
 BASE_TREE = "c49bebd5d6106da224da733d30b4c2d97c430bfc"

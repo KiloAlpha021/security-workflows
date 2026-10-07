@@ -49,11 +49,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:HEAD_SHA -notmatch '^[0-9a-f]{40}$' -or $env:WITNESS_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Missing immutable event identity' }
-          git -C witness -c core.autocrlf=false -c core.eol=lf checkout-index --all --force
+          git -C witness -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C protected -c core.autocrlf=false -c core.eol=lf checkout-index --all --force
+          git -C protected -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C candidate -c core.autocrlf=false -c core.eol=lf checkout-index --all --force
+          git -C candidate -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -I -S witness/maintenance/witness.py protected candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -149,6 +149,37 @@ class WitnessTests(unittest.TestCase):
                                  "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }")
         self.assertEqual(commands, 15)
 
+    def test_preflight_restoration_updates_index_without_environment_expansion(self):
+        text = (Path(__file__).resolve().parent.parent / witness.WORKFLOW).read_text()
+        def require_preflight_contract(source):
+            start = source.index("      - name: Restore committed representations")
+            end = source.index("      - name: Install independently pinned", start)
+            step = source[start:end]
+            expected = [
+                f"          git -C {root} -c core.autocrlf=false -c core.eol=lf "
+                "checkout-index --index --all --force"
+                for root in ("witness", "protected", "candidate")
+            ]
+            commands = [line for line in step.splitlines() if "checkout-index" in line]
+            self.assertEqual(commands, expected)
+            self.assertNotIn("GIT_CONFIG_", step)
+            self.assertIn(
+                "          python -I -S witness/maintenance/witness.py protected candidate",
+                step,
+            )
+        require_preflight_contract(text)
+        for root in ("witness", "protected", "candidate"):
+            original = (f"git -C {root} -c core.autocrlf=false -c core.eol=lf "
+                        "checkout-index --index --all --force")
+            for replacement in (
+                    original.replace(" --index", ""),
+                    original.replace(" --index", " --no-create"),
+                    original.replace("core.autocrlf=false", "core.autocrlf=true"),
+                    original.replace("core.eol=lf", "core.eol=crlf")):
+                with self.subTest(root=root, replacement=replacement):
+                    with self.assertRaises(AssertionError):
+                        require_preflight_contract(text.replace(original, replacement, 1))
+
     def test_event_binding_rejects_candidate_selection(self):
         event = {"pull_request": {"base": {"repo": {"full_name": witness.TARGET},
                  "ref": "main", "sha": witness.BASE}, "head": {
