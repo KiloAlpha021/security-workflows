@@ -182,6 +182,46 @@ class WitnessTests(unittest.TestCase):
                     with self.assertRaises(AssertionError):
                         require_preflight_contract(text.replace(original, replacement, 1))
 
+    def test_independent_source_initial_checkout_is_canonical(self):
+        import yaml
+        workflow = yaml.load((Path(__file__).resolve().parent.parent / witness.WORKFLOW)
+                             .read_text(), Loader=yaml.BaseLoader)
+        expected = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.autocrlf",
+                    "GIT_CONFIG_VALUE_0": "false"}
+
+        def source_contract(document):
+            self.assertNotIn("env", document)
+            job = document["jobs"]["independent-maintenance"]
+            self.assertNotIn("env", job)
+            checkout = job["steps"][0]
+            self.assertEqual(checkout["name"], "Check out independent witness")
+            self.assertEqual(checkout["env"], expected)
+            for step in job["steps"][1:]:
+                if "uses" in step:
+                    self.assertNotIn("env", step)
+
+        source_contract(workflow)
+        for key, value in (("GIT_CONFIG_COUNT", "2"), ("GIT_CONFIG_KEY_0", "core.eol"),
+                           ("GIT_CONFIG_VALUE_0", "true"), ("GIT_CONFIG_KEY_1", "core.safecrlf")):
+            changed = copy.deepcopy(workflow)
+            changed["jobs"]["independent-maintenance"]["steps"][0]["env"][key] = value
+            with self.assertRaises(AssertionError):
+                source_contract(changed)
+        for key in expected:
+            changed = copy.deepcopy(workflow)
+            del changed["jobs"]["independent-maintenance"]["steps"][0]["env"][key]
+            with self.assertRaises(AssertionError):
+                source_contract(changed)
+        source = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory(prefix="source-canonical-") as directory:
+            checkout = Path(directory).resolve() / "witness"
+            env = {**os.environ, **expected}
+            subprocess.run(["git", "clone", "--quiet", "--no-hardlinks", str(source), str(checkout)],
+                           env=env, check=True)
+            witness.git(checkout, "remote", "set-url", "origin", "https://github.com/" + witness.SOURCE)
+            revision = witness.git(checkout, "rev-parse", "HEAD").decode().strip()
+            witness.clean_committed_root(checkout, revision, witness.SOURCE)
+
     def test_event_binding_rejects_candidate_selection(self):
         event = {"pull_request": {"base": {"repo": {"full_name": witness.TARGET},
                  "ref": "main", "sha": witness.BASE}, "head": {
