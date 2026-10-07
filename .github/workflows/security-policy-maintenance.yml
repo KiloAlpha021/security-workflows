@@ -25,15 +25,23 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: c047a203fc7e1e3326e044f128a7323dea60041b
+          ref: 416b6fded406e6d2ff425e3192885f2dc3341900
           path: protected
           persist-credentials: false
           fetch-depth: 0
-      - name: Check out exact event candidate
+      - name: Check out exact PR21 successor
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
           ref: ${{ github.event.pull_request.head.sha }}
+          path: pr21
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check out exact evaluation merge
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KiloAlpha021/security-policy
+          ref: ${{ github.sha }}
           path: candidate
           persist-credentials: false
           fetch-depth: 0
@@ -53,9 +61,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git -C protected -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C pr21 -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git -C candidate -c core.autocrlf=false -c core.eol=lf checkout-index --index --all --force
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -I -S witness/maintenance/witness.py protected candidate
+          python -I -S -B witness/maintenance/witness.py protected pr21 candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install independently pinned policy environment
         shell: pwsh
@@ -71,6 +81,7 @@ jobs:
         shell: pwsh
         env:
           WITNESS_POLICY_REPO: ${{ github.workspace }}/protected
+          WITNESS_R3C_REPO: ${{ github.workspace }}/candidate
           PYTHONDONTWRITEBYTECODE: "1"
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: core.autocrlf
@@ -90,7 +101,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           .\policy-env\Scripts\python.exe -I -B witness/maintenance/test_witness.py run-policy candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\policy-env\Scripts\python.exe -I -S witness/maintenance/witness.py protected candidate
+          .\policy-env\Scripts\python.exe -I -S -B witness/maintenance/witness.py protected pr21 candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\policy-env\Scripts\python.exe -I -B -c "from pathlib import Path; [compile(p.read_bytes(), str(p), 'exec') for p in Path('candidate').glob('*.py')]"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
