@@ -37,16 +37,16 @@ class WitnessTests(unittest.TestCase):
 
     def test_previous_finite_tuple_is_historical_only(self):
         source = Path(__file__).resolve().parent.parent
-        predecessor = "54231482b51a8679b1a6de5398bb3160402d6b21"
+        predecessor = "e6d956e59cd26436d318e455e356eb7cf9333223"
         self.assertEqual(witness.git(source, "rev-parse", predecessor + "^{tree}")
-                         .decode().strip(), "b7bef141addf23c87c794abef20e18b3f20556e8")
+                         .decode().strip(), "707ff7ddfa2ab5c6f4a3b5824882f13c175f1c9f")
         old = witness.git(source, "show", predecessor + ":maintenance/witness.py")
-        self.assertIn(b'HEAD = "594e34d4f997e48dac7de292164b498fc0ca3eb8"', old)
+        self.assertIn(b'HEAD = "3fa3d2c6b9ee1c599a316bfda2821e53e0b1c1ea"', old)
         with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
             witness.verify(self.base, self.candidate,
-                           "594e34d4f997e48dac7de292164b498fc0ca3eb8",
-                           "ba9875f469b58b98f8ad7e1e288227e85f0abc1d",
-                           "948e644d853ff8de873014f7f5fb945a7408bed0")
+                           "3fa3d2c6b9ee1c599a316bfda2821e53e0b1c1ea",
+                           "8f10880630b519354496dbbef34ae1034c892a89",
+                           "3b0c5f655cd0f903906efe5c959097400ea17ee3")
 
     def test_each_expected_sha256_is_independently_bound(self):
         for path, (blob, _digest) in witness.EXPECTED_FILES.items():
