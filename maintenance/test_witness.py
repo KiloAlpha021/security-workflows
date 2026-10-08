@@ -37,16 +37,16 @@ class WitnessTests(unittest.TestCase):
 
     def test_previous_finite_tuple_is_historical_only(self):
         source = Path(__file__).resolve().parent.parent
-        predecessor = "e6d956e59cd26436d318e455e356eb7cf9333223"
+        predecessor = "036c97498f3ba803280e3072a178eb507c7ab18c"
         self.assertEqual(witness.git(source, "rev-parse", predecessor + "^{tree}")
-                         .decode().strip(), "707ff7ddfa2ab5c6f4a3b5824882f13c175f1c9f")
+                         .decode().strip(), "6cc37203e6b7c43b02c833b45d9a45d9fe9784e6")
         old = witness.git(source, "show", predecessor + ":maintenance/witness.py")
-        self.assertIn(b'HEAD = "3fa3d2c6b9ee1c599a316bfda2821e53e0b1c1ea"', old)
+        self.assertIn(b'HEAD = "e095e4b13d780f64a78553aca29744fb0c53626c"', old)
         with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
             witness.verify(self.base, self.candidate,
-                           "3fa3d2c6b9ee1c599a316bfda2821e53e0b1c1ea",
-                           "8f10880630b519354496dbbef34ae1034c892a89",
-                           "3b0c5f655cd0f903906efe5c959097400ea17ee3")
+                           "e095e4b13d780f64a78553aca29744fb0c53626c",
+                           "cd07407a2d1442defe4a60908ada77dfa39a6472",
+                           "3f78e8a8b877044f73cb2b38bd81a36771fe55cd")
 
     def test_each_expected_sha256_is_independently_bound(self):
         for path, (blob, _digest) in witness.EXPECTED_FILES.items():
@@ -420,7 +420,7 @@ def run_policy(root: Path) -> None:
     os.environ.update(witness.ENV)
     suite = unittest.defaultTestLoader.discover(str(root), pattern="test_verify_security_workflows.py")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    witness.require(result.wasSuccessful() and result.testsRun == 131, "policy suite incomplete/failed")
+    witness.require(result.wasSuccessful() and result.testsRun == 132, "policy suite incomplete/failed")
     witness.require({test.id() for test, _reason in result.skipped} == witness.ALLOWED_SKIPS,
                     "unexpected skip set")
     witness.require(len(result.skipped) == 2 and not result.expectedFailures

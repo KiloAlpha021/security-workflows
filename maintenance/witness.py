@@ -17,19 +17,19 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "f1t-pr25-policy-correction-certifier-v1"
+SOURCE_BRANCH = "f1t-pr64-conditional-policy-certifier-v1"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
-BASE = "3f78e8a8b877044f73cb2b38bd81a36771fe55cd"
-BASE_TREE = "8f10880630b519354496dbbef34ae1034c892a89"
-HEAD = "e095e4b13d780f64a78553aca29744fb0c53626c"
-HEAD_TREE = "cd07407a2d1442defe4a60908ada77dfa39a6472"
+BASE = "523d81fc6f4d8788e2b6b8cbab72a87b1d8accc6"
+BASE_TREE = "cd07407a2d1442defe4a60908ada77dfa39a6472"
+HEAD = "f49b7f0770d0bba83be074a078431fc356d0912e"
+HEAD_TREE = "eaab2cff8f02ac1fc6214c303d1b0758f3fac488"
 EXPECTED_FILES = {
     "verify_security_workflows.py": (
-        "e4d50f0b21dd51bc86fbed131160005e0ff30676",
-        "8799178da0718839a0191370ca6298a1753e02f398dc06f7643990f14e307316"),
+        "842cc6367a964d1972c4a842ac535c9c0e411878",
+        "43d7a840597b3395a55f66b94d24cab78ddad623a4f60b1726d6bcfd6cdc746e"),
     "test_verify_security_workflows.py": (
-        "96e653c24ddf1fbea4eb0d0ad565447c0eeb49e6",
-        "355b703d030e6095cea31c7171bc4d2ab33263edd7d35f659f02df0f502ca4c7"),
+        "c1fa205e4187f785ef2809d00a48b454b098f3af",
+        "05366db94a8a13e4b26047b7e51c7c758d2e4ddb7d72aa758bdf453aa248b56a"),
 }
 ENV = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.autocrlf",
        "GIT_CONFIG_VALUE_0": "false", "PYTHONDONTWRITEBYTECODE": "1"}
