@@ -62,3 +62,85 @@ the preserved audit of urllib3 2.7.0 reported PYSEC-2026-4177,
 PYSEC-2026-4176 and PYSEC-2026-4175. The existing patched local environment
 containing urllib3 2.8.0 passed its local audit. That local PASS does not
 establish protected S2 activation, protected hosted assurance, or S1 admission.
+
+## ATIS-S3-GOV-OWNER-001 — Stage 3 owner-led assurance
+
+Status: prospective owner governance amendment. This record becomes
+effective only after separately authorized protected publication,
+owner-approved merge and verification of the resulting protected
+record. Local preparation or owner approval of proposed wording alone
+does not establish protected effectiveness.
+
+Scope: internal ATIS Stage 3 assurance, including the separately
+assessed S2 maintenance-certifier source, prospective Stage 3
+acceptance and the existing GATE-S03-01 closure sequence.
+
+ATIS_OWNER is the sole final internal acceptance and closure authority.
+IMPLEMENTER=CODEX
+SECONDARY_ASSESSOR=CHATGPT
+EXTERNAL_HUMAN_REVIEW=DEFERRED
+
+Codex implementation and automated validation are attributable
+technical evidence. ChatGPT secondary assessment is AI-assisted.
+Neither is represented as independent human certification. No blanket
+external independent human reviewer is required by this record for
+internal Stage 3 acceptance, S2 source admission or closure. Applicable
+external legal, regulatory and contractual obligations remain unchanged.
+
+For the historical maintenance successor-review language at
+security-workflows commit 21b5fa56b25d20b686be22445d06759e5e467458,
+this record prospectively establishes the internal review arrangement:
+bounded implementation and validation, a separately attributable
+AI-assisted secondary assessment, and an explicit ATIS owner decision
+bound to the actual immutable source identity. This interpretation
+does not claim that any historical review occurred and does not alter
+the historical frozen source.
+
+ATIS-S3-S1-OWNER-GOV-001 and completed S1 decisions remain unchanged.
+This record supplies the separate S2 governance-model decision;
+S2 source admission still requires its own exact-source assessment
+and explicit owner acceptance. No unconstructed or unassessed S2
+source, future commit, candidate or workflow is preapproved.
+
+Each source decision must identify the actual source commit, tree,
+parent, permitted change cone, target policy subject and attributable
+validation and assessment evidence. Changed accepted source or changed
+subject identities invalidate applicability of that acceptance and
+require a new bounded decision. No successor inherits acceptance
+automatically.
+
+Independent technical source selection, candidate/protected separation,
+immutable Git identities, protected runtime authority, evidence pins,
+receipt authentication, currentness and revocation checks, mandatory
+security audits, adversarial tests, native failure propagation and
+fail-closed behavior remain mandatory. Automated tests do not admit
+their own certifier authority.
+
+Historical frozen-source protections and existing required-workflow
+enforcement remain unchanged. Source publication, source protection,
+workflow binding, protected publication and merges require their
+respective separate owner authorizations and effective GitHub controls.
+This record grants no bypass authority.
+
+ATIS-S3-GOV-AMD-KF04-001 remains the governing prospective Stage 3
+acceptance amendment. Historical S3-REQ-036 records remain preserved.
+All applicable substantive requirements, current attributable evidence,
+required direct and adversarial tests, exact protected identities and
+absence of unresolved material blockers remain prerequisites.
+
+An actual authenticated owner verdict remains separate from this
+governance record. GATE-S03-01 requires its existing authenticated
+evidence and separately authorized execution. Neither this record,
+owner source acceptance nor a test result supplies gate PASS. A gate
+result does not itself declare formal closure: the owner's separate
+closure decision must be supported by the required gate-result and
+closure evidence. No Stage 4 or trading authority is granted.
+
+The original protected audit failure PHASE6-TRUST-AUDIT-001 remains
+disclosed. A patched local audit PASS does not establish protected
+S2 activation or protected audit remediation.
+
+Precedence is limited to the prospective internal assurance-model
+interpretation described above. Technical controls, historical evidence,
+external obligations and source-specific authorization boundaries are
+not superseded.
