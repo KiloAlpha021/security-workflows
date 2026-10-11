@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: af7a95105466649a538734a16919a81705b5ad8f
+          ref: 5c7922d626e5835da606a65c6dd9658352afc29c
           path: protected
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: ff87a7b9597255d37ddd2504de7af46408b5267c
+          ref: ab2c511a38def0e7721492ac1213e845133c6840
           path: candidate
           persist-credentials: false
           fetch-depth: 0
@@ -86,6 +86,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           $ErrorActionPreference = 'Stop'
+          # Stage-A compatibility uses a labelled disposable synthetic merge; not protected activation.
           .\policy-env\Scripts\python.exe -I -B witness/maintenance/test_witness.py run-policy candidate protected
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\policy-env\Scripts\python.exe -I -S -B witness/maintenance/witness.py protected candidate
@@ -98,9 +99,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -m venv audit-env
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\audit-env\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r protected/requirements-audit.lock
+          .\audit-env\Scripts\python.exe -m pip install --require-hashes --only-binary=:all: -r candidate/requirements-audit.lock
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\audit-env\Scripts\python.exe -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\audit-env\Scripts\python.exe -m pip_audit --no-deps -r protected/requirements-policy.lock
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\audit-env\Scripts\python.exe -m pip_audit --local
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

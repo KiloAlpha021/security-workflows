@@ -243,7 +243,7 @@ class WitnessTests(unittest.TestCase):
                 commands += 1
                 self.assertEqual(lines[index + 1].strip(),
                                  "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }")
-        self.assertEqual(commands, 15)
+        self.assertEqual(commands, 16)
 
     def test_preflight_restoration_updates_index_without_environment_expansion(self):
         text = (Path(__file__).resolve().parent.parent / witness.WORKFLOW).read_text()
@@ -355,8 +355,15 @@ class WitnessTests(unittest.TestCase):
                          "737163e87eef8c61f16d3abb995f5fbcfd25616b:" + witness.WORKFLOW),
                          Loader=yaml.BaseLoader)
         old_steps = {s["name"]: s for s in prior["jobs"]["independent-maintenance"]["steps"]}
-        for step in (steps[3], steps[5], steps[8]):
+        for step in (steps[3], steps[5]):
             self.assertEqual(step, old_steps[step["name"]])
+        expected_audit = copy.deepcopy(old_steps[steps[8]["name"]])
+        expected_audit["run"] = expected_audit["run"].replace(
+            "-r protected/requirements-audit.lock", "-r candidate/requirements-audit.lock")
+        expected_audit["run"] += (
+            " .\\audit-env\\Scripts\\python.exe -m pip_audit --local\n".lstrip()
+            + "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n")
+        self.assertEqual(steps[8], expected_audit)
         self.assertEqual(steps[6]["env"], {**witness.ENV,
                          "WITNESS_POLICY_REPO": "${{ github.workspace }}/candidate"})
         full = steps[7]["run"]
@@ -463,6 +470,127 @@ class WitnessTests(unittest.TestCase):
         self.assertIn("run-policy candidate protected", steps[7]["run"])
 
 
+    def test_s1_source_preserved_but_policy_subject_rejected(self):
+        source = Path(__file__).resolve().parent.parent
+        prior = "1dc2e670171825eb013e6f3797c9f1ded053c203"
+        self.assertEqual(witness.git(source, "rev-parse", prior + "^{tree}").decode().strip(),
+                         "38bf286427c4ec95c2040f65c10a12be079f3033")
+        self.assertIn(b'HEAD = "ff87a7b9597255d37ddd2504de7af46408b5267c"',
+                      witness.git(source, "show", prior + ":maintenance/witness.py"))
+        with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
+            witness.verify(self.base, self.candidate,
+                           "ff87a7b9597255d37ddd2504de7af46408b5267c",
+                           "708e33a981ea7218208cae5a9da930ff19de5063",
+                           "af7a95105466649a538734a16919a81705b5ad8f")
+
+    def test_old_audit_and_unchanged_policy_lock_are_pinned(self):
+        for field in ("OLD_AUDIT", "POLICY_LOCK"):
+            blob, digest = getattr(witness, field)
+            for replacement in (("0" * 40, digest), (blob, "0" * 64)):
+                with self.subTest(field=field, replacement=replacement), mock.patch.object(
+                        witness, field, replacement), mock.patch.object(
+                        witness, "clean_committed_root"), self.assertRaisesRegex(
+                        witness.Rejected, "dependency"):
+                    witness.verify(self.base, self.candidate)
+
+    def test_protected_bootstrap_accepts_exact_sealed_s2_only_as_proposal(self):
+        spec = importlib.util.spec_from_file_location("s2_bootstrap", self.base / "protected_policy_bootstrap.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        module._audit_seed(self.base, witness.BASE)
+        module._audit_head(self.candidate, witness.HEAD, witness.BASE)
+        self.assertEqual(module._audit_state(self.base, witness.BASE), ("PENDING", witness.BASE))
+        self.assertEqual(module._audit_state(self.candidate, witness.HEAD), ("PROPOSAL", witness.BASE))
+        with self.assertRaises(module.BootstrapError):
+            module._audit_protected_identity(self.candidate, witness.HEAD)
+        with self.assertRaises(module.BootstrapError):
+            module._audit_head(self.candidate, witness.BASE, witness.BASE)
+
+
+    def test_merge_fixture_topology_and_attribution_fail_closed(self):
+        revision = "1" * 40
+        parents = f"{revision} {witness.BASE} {witness.HEAD}\n".encode()
+        def fake(root, *args):
+            if args == ("rev-list", "--parents", "-n", "1", revision):
+                return parents
+            if args == ("rev-parse", revision + "^{tree}"):
+                return (witness.HEAD_TREE + "\n").encode()
+            raise AssertionError(args)
+        with mock.patch.object(witness, "clean_committed_root"), mock.patch.object(witness, "git", side_effect=fake):
+            record = witness.verify_merge_fixture(self.candidate, revision, "SYNTHETIC_LOCAL_COMPATIBILITY")
+            self.assertIs(record["protected_activation"], False)
+            for kind in ("PROTECTED_ACTIVATION", "HOSTED_PASS", "", "OWNER_ACCEPTED"):
+                with self.subTest(kind=kind), self.assertRaises(witness.Rejected):
+                    witness.verify_merge_fixture(self.candidate, revision, kind)
+            for value in (f"{revision} {witness.BASE}\n",
+                          f"{revision} {'0' * 40} {witness.HEAD}\n",
+                          f"{revision} {witness.BASE} {'0' * 40}\n",
+                          f"{revision} {witness.HEAD} {witness.BASE}\n"):
+                parents = value.encode()
+                with self.subTest(parents=value), self.assertRaisesRegex(witness.Rejected, "merge parent"):
+                    witness.verify_merge_fixture(self.candidate, revision, "SYNTHETIC_LOCAL_COMPATIBILITY")
+            parents = f"{revision} {witness.BASE} {witness.HEAD}\n".encode()
+            with mock.patch.object(witness, "HEAD_TREE", "0" * 40):
+                # Keep the observed tree independent of the substituted expected tree.
+                def wrong_tree(root, *args):
+                    return parents if args[0] == "rev-list" else b"2" * 40 + b"\n"
+                with mock.patch.object(witness, "git", side_effect=wrong_tree), self.assertRaisesRegex(witness.Rejected, "merge tree"):
+                    witness.verify_merge_fixture(self.candidate, revision, "SYNTHETIC_LOCAL_COMPATIBILITY")
+
+
+def run_merge_policy_checks(root: Path, protected: Path, names=None) -> None:
+    """Exercise unchanged Stage A on a disposable, labelled merge fixture."""
+    root = root.resolve(strict=True)
+    protected = protected.resolve(strict=True)
+    witness.verify(protected, root)
+    witness.require(witness.git(protected, "rev-parse", "refs/remotes/origin/main")
+                    .decode().strip() == witness.BASE, "protected origin/main mismatch")
+    if names is None:
+        names = ["test_protected_source_and_candidate_target_contract",
+                 "test_stage_a_candidate_invariants"]
+    witness.require(bool(names) and len(names) == len(set(names)) and set(names) <= {
+        "test_protected_source_and_candidate_target_contract",
+        "test_stage_a_candidate_invariants"}, "unknown compatibility test")
+    with tempfile.TemporaryDirectory(prefix="s2-merge-") as directory:
+        merge_root = Path(directory).resolve() / "evaluation"
+        subprocess.run(["git", "-c", "core.autocrlf=false", "clone", "--quiet",
+                        "--no-hardlinks", "--no-checkout", str(root), str(merge_root)], check=True)
+        witness.git(merge_root, "remote", "set-url", "origin", "https://github.com/" + witness.TARGET)
+        fixture_env = {**os.environ,
+                       "GIT_AUTHOR_NAME": "Synthetic compatibility fixture",
+                       "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                       "GIT_COMMITTER_NAME": "Synthetic compatibility fixture",
+                       "GIT_COMMITTER_EMAIL": "fixture@example.invalid"}
+        merge_sha = subprocess.check_output(
+            ["git", "-C", str(merge_root), "commit-tree", witness.HEAD_TREE,
+             "-p", witness.BASE, "-p", witness.HEAD],
+            input=b"SYNTHETIC_LOCAL_COMPATIBILITY: not protected activation\n",
+            env=fixture_env).decode().strip()
+        witness.git(merge_root, "-c", "core.autocrlf=false", "checkout", "--detach", merge_sha)
+        witness.separate_roots(root, protected, merge_root)
+        record = witness.verify_merge_fixture(merge_root, merge_sha, "SYNTHETIC_LOCAL_COMPATIBILITY")
+        print(json.dumps(record, sort_keys=True), flush=True)
+        env = {**os.environ, **witness.ENV,
+               "POLICY_CANDIDATE_ROOT": str(merge_root), "POLICY_PROTECTED_ROOT": str(protected),
+               "POLICY_EXPECTED_REPOSITORY": witness.TARGET,
+               "POLICY_EXPECTED_CANDIDATE_SHA": merge_sha,
+               "POLICY_EXPECTED_BASE_REPOSITORY": witness.TARGET,
+               "POLICY_EXPECTED_BASE_BRANCH": "main", "POLICY_EXPECTED_EVENT": "pull_request",
+               "POLICY_EXPECTED_PROTECTED_SHA": witness.BASE}
+        command = (
+            "import sys,json,unittest;sys.path.insert(0,sys.argv[1]);"
+            "import test_verify_security_workflows as t;"
+            "names=json.loads(sys.argv[2]);"
+            "s=unittest.TestSuite(t.RootPolicyTests(n) for n in names);"
+            "r=unittest.TextTestRunner(verbosity=2,failfast=True).run(s);"
+            "sys.exit(not(r.wasSuccessful() and r.testsRun==len(names) and not r.skipped))")
+        subprocess.run([sys.executable, "-I", "-B", "-c", command, str(protected), json.dumps(names)],
+                       env=env, check=True)
+        witness.verify_merge_fixture(merge_root, merge_sha, "SYNTHETIC_LOCAL_COMPATIBILITY")
+        witness.verify(protected, root)
+
+
 def run_policy(root: Path, protected: Path) -> None:
     root = root.resolve(strict=True)
     for index in range(int(os.environ.get("GIT_CONFIG_COUNT", "0"))):
@@ -479,22 +607,7 @@ def run_policy(root: Path, protected: Path) -> None:
                     and not result.unexpectedSuccesses, "unexpected test disposition")
     protected = protected.resolve(strict=True)
     witness.verify(protected, root)
-    env = {**os.environ,
-           "POLICY_CANDIDATE_ROOT": str(root), "POLICY_PROTECTED_ROOT": str(protected),
-           "POLICY_EXPECTED_REPOSITORY": witness.TARGET,
-           "POLICY_EXPECTED_CANDIDATE_SHA": witness.HEAD,
-           "POLICY_EXPECTED_BASE_REPOSITORY": witness.TARGET,
-           "POLICY_EXPECTED_BASE_BRANCH": "main", "POLICY_EXPECTED_EVENT": "pull_request",
-           "POLICY_EXPECTED_PROTECTED_SHA": witness.BASE}
-    command = (
-        "import sys,unittest;sys.path.insert(0,sys.argv[1]);"
-        "import test_verify_security_workflows as t;"
-        "s=unittest.TestSuite(t.RootPolicyTests(n) for n in "
-        "('test_protected_source_and_candidate_target_contract','test_stage_a_candidate_invariants'));"
-        "r=unittest.TextTestRunner(verbosity=2,failfast=True).run(s);"
-        "sys.exit(not(r.wasSuccessful() and r.testsRun==2 and not r.skipped))")
-    subprocess.run([sys.executable, "-I", "-B", "-c", command, str(protected)],
-                   env=env, check=True)
+    run_merge_policy_checks(root, protected)
     print(json.dumps({"suite": "FULL_POLICY_AND_ADVERSARIAL", "run": result.testsRun,
                       "passed": result.testsRun - len(result.skipped), "authorized_skips": 2,
                       "result": "PASS"}, sort_keys=True))

@@ -1,4 +1,4 @@
-"""Finite S1 technical certification of one sealed policy authority seed.
+"""Finite S2 technical certification of one sealed audit-lock activation.
 
 Local proposal; independent source admission is not established. Only after
 separate admission and owner authorization may protection bind this
@@ -18,20 +18,25 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "programme-a-s1-policy-seed-certifier-v1"
+SOURCE_BRANCH = "programme-a-s2-audit-lock-certifier-v1"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
-BASE = "af7a95105466649a538734a16919a81705b5ad8f"
-BASE_TREE = "b0aa2ee7709d8529a2d6d2230b61d326b4a9069f"
-HEAD = "ff87a7b9597255d37ddd2504de7af46408b5267c"
-HEAD_TREE = "708e33a981ea7218208cae5a9da930ff19de5063"
+BASE = "5c7922d626e5835da606a65c6dd9658352afc29c"
+BASE_TREE = "708e33a981ea7218208cae5a9da930ff19de5063"
+HEAD = "ab2c511a38def0e7721492ac1213e845133c6840"
+HEAD_TREE = "f8e879cc5aa4aa393f198f4e082d73162a4ef68f"
 EXPECTED_FILES = {
-    "protected_policy_bootstrap.py": (
-        "9735529ebc024cd6d65b8b317c2cb89c6ccb46fe",
-        "d0c2353a8f1465afb88b7df49038e6388812a8786c787198945a849c8a104d4a"),
-    "test_verify_security_workflows.py": (
-        "6287bea64283d0d00af60ab99827e8467832f75d",
-        "5151f9ea407d84b45d3ca8ac84c67baf08ee1ef592daccbdc35ce7893d3ea92f"),
+    "requirements-audit.lock": (
+        "04f514da5dddb6aa83723cfba28448972c8a38ac",
+        "e1f6d6d95efa753187742474ae0a13199f9e8e7777decd3464bc9928780333c2"),
 }
+OLD_AUDIT = (
+    "dbfa6a4d8ef8c344009ad3a15007b2b1c98511fe",
+    "bd75e0d124e602152a78c08f8f2c8e6ed7a8852bfce4a4b189b605a7f064ce34",
+)
+POLICY_LOCK = (
+    "b11e8ca274a5426789be10d24919679c8da0aa4f",
+    "2c8257dff9274ba95c7a2d21757ac79acc816e295e45062d0ad8c05d7a2d2f6c",
+)
 ENV = {"PYTHONDONTWRITEBYTECODE": "1"}
 ALLOWED_SKIPS = {
     "test_verify_security_workflows.RootPolicyTests.test_stage_a_candidate_invariants",
@@ -142,6 +147,15 @@ def verify(base_root: Path, candidate: Path, head: str = HEAD,
         require(hashlib.sha256(raw).hexdigest() == digest,
                 "candidate byte substitution: " + path)
         canonical(raw)
+    for root, revision, path, expected in (
+            (base_root, BASE, "requirements-audit.lock", OLD_AUDIT),
+            (base_root, BASE, "requirements-policy.lock", POLICY_LOCK),
+            (candidate, HEAD, "requirements-policy.lock", POLICY_LOCK)):
+        blob, digest = expected
+        require(git(root, "ls-tree", revision, "--", path).decode().strip()
+                == f"100644 blob {blob}\t{path}", "dependency identity/mode substitution")
+        require(hashlib.sha256(git(root, "cat-file", "blob", blob)).hexdigest()
+                == digest, "dependency byte substitution")
     require((candidate / ".gitattributes").read_bytes()
             == b".github/workflows/security-workflows-policy.yml text eol=lf\n",
             "canonical attributes changed")
@@ -149,6 +163,21 @@ def verify(base_root: Path, candidate: Path, head: str = HEAD,
             "head": HEAD, "tree": HEAD_TREE, "parent": BASE, "commits": 1,
             "files": EXPECTED_FILES, "cleanliness": "PASS",
             "result": "EXACT_FINITE_BINDING_PASS"}
+
+
+
+def verify_merge_fixture(root: Path, revision: str, evidence_kind: str) -> dict:
+    """Validate test topology only; never admit a protected activation."""
+    require(evidence_kind == "SYNTHETIC_LOCAL_COMPATIBILITY", "fixture attribution required")
+    revision = sha(revision)
+    clean_committed_root(root, revision, TARGET)
+    require(git(root, "rev-list", "--parents", "-n", "1", revision).decode().split()
+            == [revision, BASE, HEAD], "merge parent substitution")
+    require(git(root, "rev-parse", revision + "^{tree}").decode().strip()
+            == HEAD_TREE, "merge tree substitution")
+    return {"evidence_kind": evidence_kind, "evaluation_sha": revision,
+            "proposal_sha": HEAD, "base_sha": BASE, "tree": HEAD_TREE,
+            "protected_activation": False}
 
 
 def main() -> None:
