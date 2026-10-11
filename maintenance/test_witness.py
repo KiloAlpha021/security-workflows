@@ -414,24 +414,94 @@ class WitnessTests(unittest.TestCase):
                 alias.unlink()
 
 
-def run_policy(root: Path) -> None:
+    def test_s1_predecessor_source_and_historical_tuple(self):
+        source = Path(__file__).resolve().parent.parent
+        old = "21b5fa56b25d20b686be22445d06759e5e467458"
+        self.assertEqual(witness.git(source, "rev-parse", old + "^{tree}").decode().strip(),
+                         "057afc086b63eefbae3627118eeb33006b693e72")
+        self.assertIn(b'a2ec12753af1634db4136dcb83820fa9351540b8',
+                      witness.git(source, "show", old + ":maintenance/witness.py"))
+        with self.assertRaises(witness.Rejected):
+            witness.verify(self.base, self.candidate,
+                           "a2ec12753af1634db4136dcb83820fa9351540b8")
+
+    def test_both_lock_mutations_rejected(self):
+        for name in ("requirements-policy.lock", "requirements-audit.lock"):
+            path = self.candidate / name
+            original = path.read_bytes()
+            try:
+                path.write_bytes(original + b"# unauthorized\n")
+                with self.assertRaises(witness.Rejected):
+                    witness.verify(self.base, self.candidate)
+            finally:
+                path.write_bytes(original)
+
+    def test_shallow_missing_history_and_file_mode_rejected(self):
+        real = witness.git
+        for failure in ("shallow", "history", "mode"):
+            def changed(root, *args):
+                if failure == "shallow" and args == ("rev-parse", "--is-shallow-repository"):
+                    return b"true\n"
+                if failure == "history" and args[:3] == ("-c", "core.commitGraph=false", "rev-list"):
+                    raise subprocess.CalledProcessError(128, ["git", *args], stderr=b"missing object")
+                result = real(root, *args)
+                if failure == "mode" and args[:2] == ("ls-tree", "-rz"):
+                    return result.replace(b"100644 blob", b"100755 blob", 1)
+                return result
+            with self.subTest(failure=failure), mock.patch.object(witness, "git", side_effect=changed):
+                with self.assertRaises((witness.Rejected, subprocess.CalledProcessError)):
+                    witness.clean_committed_root(self.candidate, witness.HEAD, witness.TARGET)
+
+    def test_fixture_environment_separate_from_checkout(self):
+        import yaml
+        document = yaml.load((Path(__file__).resolve().parent.parent / witness.WORKFLOW).read_text(),
+                             Loader=yaml.BaseLoader)
+        steps = document["jobs"]["independent-maintenance"]["steps"]
+        for step in steps[1:]:
+            self.assertFalse(any(k.startswith("GIT_CONFIG") for k in step.get("env", {})))
+        self.assertEqual(witness.ENV, {"PYTHONDONTWRITEBYTECODE": "1"})
+        self.assertIn("run-policy candidate protected", steps[7]["run"])
+
+
+def run_policy(root: Path, protected: Path) -> None:
     root = root.resolve(strict=True)
+    for index in range(int(os.environ.get("GIT_CONFIG_COUNT", "0"))):
+        witness.require(os.environ.get(f"GIT_CONFIG_KEY_{index}", "").lower()
+                        not in {"core.autocrlf", "core.eol"}, "fixture normalization override")
     sys.path.insert(0, str(root))
     os.environ.update(witness.ENV)
     suite = unittest.defaultTestLoader.discover(str(root), pattern="test_verify_security_workflows.py")
     result = unittest.TextTestRunner(verbosity=2).run(suite)
-    witness.require(result.wasSuccessful() and result.testsRun == 132, "policy suite incomplete/failed")
+    witness.require(result.wasSuccessful() and result.testsRun == 155, "policy suite incomplete/failed")
     witness.require({test.id() for test, _reason in result.skipped} == witness.ALLOWED_SKIPS,
                     "unexpected skip set")
     witness.require(len(result.skipped) == 2 and not result.expectedFailures
                     and not result.unexpectedSuccesses, "unexpected test disposition")
+    protected = protected.resolve(strict=True)
+    witness.verify(protected, root)
+    env = {**os.environ,
+           "POLICY_CANDIDATE_ROOT": str(root), "POLICY_PROTECTED_ROOT": str(protected),
+           "POLICY_EXPECTED_REPOSITORY": witness.TARGET,
+           "POLICY_EXPECTED_CANDIDATE_SHA": witness.HEAD,
+           "POLICY_EXPECTED_BASE_REPOSITORY": witness.TARGET,
+           "POLICY_EXPECTED_BASE_BRANCH": "main", "POLICY_EXPECTED_EVENT": "pull_request",
+           "POLICY_EXPECTED_PROTECTED_SHA": witness.BASE}
+    command = (
+        "import sys,unittest;sys.path.insert(0,sys.argv[1]);"
+        "import test_verify_security_workflows as t;"
+        "s=unittest.TestSuite(t.RootPolicyTests(n) for n in "
+        "('test_protected_source_and_candidate_target_contract','test_stage_a_candidate_invariants'));"
+        "r=unittest.TextTestRunner(verbosity=2,failfast=True).run(s);"
+        "sys.exit(not(r.wasSuccessful() and r.testsRun==2 and not r.skipped))")
+    subprocess.run([sys.executable, "-I", "-B", "-c", command, str(protected)],
+                   env=env, check=True)
     print(json.dumps({"suite": "FULL_POLICY_AND_ADVERSARIAL", "run": result.testsRun,
                       "passed": result.testsRun - len(result.skipped), "authorized_skips": 2,
                       "result": "PASS"}, sort_keys=True))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "run-policy":
-        run_policy(Path(sys.argv[2]))
+    if len(sys.argv) == 4 and sys.argv[1] == "run-policy":
+        run_policy(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
         unittest.main()

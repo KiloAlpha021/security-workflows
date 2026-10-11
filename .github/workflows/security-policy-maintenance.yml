@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: c59147c668759e9849e5235035fa62f3610ef732
+          ref: af7a95105466649a538734a16919a81705b5ad8f
           path: protected
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: a2ec12753af1634db4136dcb83820fa9351540b8
+          ref: ff87a7b9597255d37ddd2504de7af46408b5267c
           path: candidate
           persist-credentials: false
           fetch-depth: 0
@@ -76,9 +76,6 @@ jobs:
         env:
           WITNESS_POLICY_REPO: ${{ github.workspace }}/candidate
           PYTHONDONTWRITEBYTECODE: "1"
-          GIT_CONFIG_COUNT: "1"
-          GIT_CONFIG_KEY_0: core.autocrlf
-          GIT_CONFIG_VALUE_0: "false"
         run: |
           $ErrorActionPreference = 'Stop'
           .\policy-env\Scripts\python.exe -I -B witness/maintenance/test_witness.py -v
@@ -87,12 +84,9 @@ jobs:
         shell: pwsh
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-          GIT_CONFIG_COUNT: "1"
-          GIT_CONFIG_KEY_0: core.autocrlf
-          GIT_CONFIG_VALUE_0: "false"
         run: |
           $ErrorActionPreference = 'Stop'
-          .\policy-env\Scripts\python.exe -I -B witness/maintenance/test_witness.py run-policy candidate
+          .\policy-env\Scripts\python.exe -I -B witness/maintenance/test_witness.py run-policy candidate protected
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\policy-env\Scripts\python.exe -I -S -B witness/maintenance/witness.py protected candidate
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

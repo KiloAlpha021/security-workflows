@@ -1,6 +1,7 @@
-"""Finite independent certification of one sealed F1-T policy correction.
+"""Finite S1 technical certification of one sealed policy authority seed.
 
-Local proposal only until the owner freezes this source branch and binds its
+Local proposal; independent source admission is not established. Only after
+separate admission and owner authorization may protection bind this
 exact sealed SHA in the organization required-workflow rule. GitHub's trusted
 workflow identity, never candidate input, selects the independent source.
 """
@@ -17,22 +18,21 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "f1t-pr64-trusted-verifier-certifier-v1"
+SOURCE_BRANCH = "programme-a-s1-policy-seed-certifier-v1"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
-BASE = "c59147c668759e9849e5235035fa62f3610ef732"
-BASE_TREE = "eaab2cff8f02ac1fc6214c303d1b0758f3fac488"
-HEAD = "a2ec12753af1634db4136dcb83820fa9351540b8"
-HEAD_TREE = "b0aa2ee7709d8529a2d6d2230b61d326b4a9069f"
+BASE = "af7a95105466649a538734a16919a81705b5ad8f"
+BASE_TREE = "b0aa2ee7709d8529a2d6d2230b61d326b4a9069f"
+HEAD = "ff87a7b9597255d37ddd2504de7af46408b5267c"
+HEAD_TREE = "708e33a981ea7218208cae5a9da930ff19de5063"
 EXPECTED_FILES = {
-    "verify_security_workflows.py": (
-        "1b7ac7958841a2ece7d4fafbdc34ff610856d2b9",
-        "d2b48c6b1c12447f894506ec6af0b3f91d0c979c50dfd8c7f4acee396f02a0d9"),
+    "protected_policy_bootstrap.py": (
+        "9735529ebc024cd6d65b8b317c2cb89c6ccb46fe",
+        "d0c2353a8f1465afb88b7df49038e6388812a8786c787198945a849c8a104d4a"),
     "test_verify_security_workflows.py": (
-        "20daddaf2731dcdb690ea17be6e15da342d55104",
-        "ee7df5939096c6c271d75fbfb5e86eac7f6d03ff0445c0d83c553634b7b0a38e"),
+        "6287bea64283d0d00af60ab99827e8467832f75d",
+        "5151f9ea407d84b45d3ca8ac84c67baf08ee1ef592daccbdc35ce7893d3ea92f"),
 }
-ENV = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.autocrlf",
-       "GIT_CONFIG_VALUE_0": "false", "PYTHONDONTWRITEBYTECODE": "1"}
+ENV = {"PYTHONDONTWRITEBYTECODE": "1"}
 ALLOWED_SKIPS = {
     "test_verify_security_workflows.RootPolicyTests.test_stage_a_candidate_invariants",
     "test_verify_security_workflows.RootPolicyTests.test_protected_source_and_candidate_target_contract",
@@ -74,6 +74,9 @@ def validate_source(root: Path, workflow_ref: str, workflow_sha: str) -> None:
 
 
 def clean_committed_root(root: Path, revision: str, repository: str) -> None:
+    require(git(root, "rev-parse", "--is-shallow-repository") == b"false\n",
+            "incomplete Git history")
+    git(root, "-c", "core.commitGraph=false", "rev-list", "--parents", revision)
     require(root.is_absolute() and root.resolve(strict=True) == root, "noncanonical root")
     require(git(root, "remote", "get-url", "origin").decode().strip().removesuffix(".git")
             == "https://github.com/" + repository, "wrong Git repository")
