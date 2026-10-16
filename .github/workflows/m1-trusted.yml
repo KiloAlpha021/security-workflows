@@ -12,18 +12,6 @@ jobs:
     if: github.repository == 'KiloAlpha021/automated-trading-bot'
     name: trusted-m1-evaluator
     runs-on: windows-latest
-    env:
-      TRUSTED_VENV: ${{ runner.temp }}\atis-trusted-certification-venv
-      ATIS_EXECUTION_OUTPUT: ${{ runner.temp }}\atis-execution-output
-      TEMP: ${{ runner.temp }}\atis-temp
-      TMP: ${{ runner.temp }}\atis-temp
-      PYTEST_BASETEMP: ${{ runner.temp }}\atis-pytest
-      COVERAGE_FILE: ${{ runner.temp }}\atis-coverage\.coverage
-      COVERAGE_XML: ${{ runner.temp }}\atis-coverage\coverage.xml
-      RUFF_CACHE_DIR: ${{ runner.temp }}\atis-ruff-cache
-      MYPY_CACHE_DIR: ${{ runner.temp }}\atis-mypy-cache
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}\atis-python-cache
-      PYTEST_ADDOPTS: -p no:cacheprovider
     steps:
       - name: Check out exact trading candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -59,6 +47,31 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { throw 'RUNNER_TEMP is required' }
+          if (-not [System.IO.Path]::IsPathFullyQualified($env:RUNNER_TEMP)) { throw 'RUNNER_TEMP must be absolute' }
+          $runnerTemp = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP)
+          $workspace = [System.IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          $workspacePrefix = $workspace.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+          if ($runnerTemp.Equals($workspace, [System.StringComparison]::OrdinalIgnoreCase) -or $runnerTemp.StartsWith($workspacePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw 'RUNNER_TEMP must be outside the GitHub workspace'
+          }
+          $bindings = [ordered]@{
+            TRUSTED_VENV = Join-Path $runnerTemp 'atis-trusted-certification-venv'
+            ATIS_EXECUTION_OUTPUT = Join-Path $runnerTemp 'atis-execution-output'
+            TEMP = Join-Path $runnerTemp 'atis-temp'
+            TMP = Join-Path $runnerTemp 'atis-temp'
+            PYTEST_BASETEMP = Join-Path $runnerTemp 'atis-pytest'
+            COVERAGE_FILE = Join-Path $runnerTemp 'atis-coverage\.coverage'
+            COVERAGE_XML = Join-Path $runnerTemp 'atis-coverage\coverage.xml'
+            RUFF_CACHE_DIR = Join-Path $runnerTemp 'atis-ruff-cache'
+            MYPY_CACHE_DIR = Join-Path $runnerTemp 'atis-mypy-cache'
+            PYTHONPYCACHEPREFIX = Join-Path $runnerTemp 'atis-python-cache'
+            PYTEST_ADDOPTS = '-p no:cacheprovider'
+          }
+          foreach ($binding in $bindings.GetEnumerator()) {
+            [System.Environment]::SetEnvironmentVariable($binding.Key, $binding.Value, [System.EnvironmentVariableTarget]::Process)
+            ("{0}={1}" -f $binding.Key, $binding.Value) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
           python -c "import sys; assert sys.version_info[:3] == (3, 12, 10), sys.version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m venv $env:TRUSTED_VENV
