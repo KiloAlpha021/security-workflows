@@ -12,6 +12,18 @@ jobs:
     if: github.repository == 'KiloAlpha021/automated-trading-bot'
     name: trusted-m1-evaluator
     runs-on: windows-latest
+    env:
+      TRUSTED_VENV: ${{ runner.temp }}\atis-trusted-certification-venv
+      ATIS_EXECUTION_OUTPUT: ${{ runner.temp }}\atis-execution-output
+      TEMP: ${{ runner.temp }}\atis-temp
+      TMP: ${{ runner.temp }}\atis-temp
+      PYTEST_BASETEMP: ${{ runner.temp }}\atis-pytest
+      COVERAGE_FILE: ${{ runner.temp }}\atis-coverage\.coverage
+      COVERAGE_XML: ${{ runner.temp }}\atis-coverage\coverage.xml
+      RUFF_CACHE_DIR: ${{ runner.temp }}\atis-ruff-cache
+      MYPY_CACHE_DIR: ${{ runner.temp }}\atis-mypy-cache
+      PYTHONPYCACHEPREFIX: ${{ runner.temp }}\atis-python-cache
+      PYTEST_ADDOPTS: -p no:cacheprovider
     steps:
       - name: Check out exact trading candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -43,6 +55,28 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python trusted/verify_candidate.py --candidate candidate --trusted trusted --event-repository $env:EVENT_REPOSITORY --candidate-sha $env:CANDIDATE_SHA --event-name $env:EVENT_NAME --event-base-sha $env:EVENT_BASE_SHA --event-head-sha $env:EVENT_HEAD_SHA --github-output $env:GITHUB_OUTPUT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create isolated trusted certification environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -c "import sys; assert sys.version_info[:3] == (3, 12, 10), sys.version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m venv $env:TRUSTED_VENV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $venvScripts = Join-Path $env:TRUSTED_VENV 'Scripts'
+          $venvPython = Join-Path $venvScripts 'python.exe'
+          if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) { throw 'Trusted venv interpreter is missing' }
+          foreach ($path in @($env:ATIS_EXECUTION_OUTPUT, $env:TEMP, (Split-Path -Parent $env:COVERAGE_FILE), $env:RUFF_CACHE_DIR, $env:MYPY_CACHE_DIR, $env:PYTHONPYCACHEPREFIX)) {
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+          }
+          if (Test-Path -LiteralPath $env:PYTEST_BASETEMP) { throw 'Pytest state root already exists' }
+          $venvScripts | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Prove isolated Python command resolution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -c "import importlib.util,pathlib,sys; expected=pathlib.Path(r'$env:TRUSTED_VENV').resolve(); executable=pathlib.Path(sys.executable).resolve(); assert sys.version_info[:3] == (3,12,10), sys.version; assert sys.prefix != sys.base_prefix; assert executable.is_relative_to(expected), (executable,expected); assert importlib.util.find_spec('pipx') is None"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install exact trusted dependencies
         working-directory: candidate
         shell: pwsh
@@ -62,7 +96,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -c "import automated_trading_bot"
+          python -c "import automated_trading_bot,pathlib,site,sys; origin=pathlib.Path(automated_trading_bot.__file__).resolve(); venv=pathlib.Path(r'$env:TRUSTED_VENV').resolve(); candidate_src=(pathlib.Path.cwd()/'src').resolve(); sites=[pathlib.Path(p).resolve() for p in site.getsitepackages()]; assert pathlib.Path(sys.executable).resolve().is_relative_to(venv); assert any(origin.is_relative_to(p) for p in sites), (origin,sites); assert not origin.is_relative_to(candidate_src), (origin,candidate_src)"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import tomllib,pathlib; p=tomllib.loads(pathlib.Path('pyproject.toml').read_text()); assert p['project']['requires-python']=='==3.12.10'; assert p['project']['dependencies']==[]"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -75,18 +109,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m mypy src/automated_trading_bot
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m coverage run --source=automated_trading_bot -m pytest -q
+          python -m coverage run --source=automated_trading_bot -m pytest -q --basetemp $env:PYTEST_BASETEMP
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m coverage report --show-missing
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m coverage xml -o coverage.xml
+          python -m coverage xml -o $env:COVERAGE_XML
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run explicit M1 security and provenance controls
         working-directory: candidate
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m pytest -q tests/test_architecture.py tests/test_blocked_assessment.py tests/test_closure_security.py tests/test_closure_traceability.py tests/test_dependency_lock.py tests/test_engineering_foundation.py tests/test_hosted_branch_protection.py tests/test_m1_completion.py tests/test_replay.py tests/test_stage0b_phase39.py
+          python -m pytest -q --basetemp $env:PYTEST_BASETEMP-security tests/test_architecture.py tests/test_blocked_assessment.py tests/test_closure_security.py tests/test_closure_traceability.py tests/test_dependency_lock.py tests/test_engineering_foundation.py tests/test_hosted_branch_protection.py tests/test_m1_completion.py tests/test_replay.py tests/test_stage0b_phase39.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip_audit --local
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

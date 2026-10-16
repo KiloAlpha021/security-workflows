@@ -629,6 +629,49 @@ class CandidateVerificationTests(unittest.TestCase):
         ):
             self.assertIn(f"- name: {step}\n        working-directory: candidate", workflow)
 
+    def test_workflow_uses_one_isolated_trusted_python_environment(self) -> None:
+        workflow = (Path(__file__).parent / ".github/workflows/m1-trusted.yml").read_text()
+        self.assertIn("python-version: 3.12.10", workflow)
+        self.assertIn("TRUSTED_VENV: ${{ runner.temp }}\\atis-trusted-certification-venv", workflow)
+        self.assertIn("python -m venv $env:TRUSTED_VENV", workflow)
+        self.assertNotIn("--system-site-packages", workflow)
+        self.assertIn("$env:GITHUB_PATH", workflow)
+        self.assertIn("sys.prefix != sys.base_prefix", workflow)
+        self.assertIn("pathlib.Path(sys.executable).resolve().is_relative_to(venv)", workflow)
+        self.assertIn("importlib.util.find_spec('pipx') is None", workflow)
+        self.assertIn("assert any(origin.is_relative_to(p) for p in sites)", workflow)
+        self.assertIn("assert not origin.is_relative_to(candidate_src)", workflow)
+
+    def test_workflow_preserves_policy_commands_and_external_state(self) -> None:
+        workflow = (Path(__file__).parent / ".github/workflows/m1-trusted.yml").read_text()
+        for command in (
+            "python -m pip check",
+            "python -m ruff check",
+            "python -m mypy",
+            "python -m coverage run",
+            "python -m coverage report",
+            "python -m coverage xml",
+            "python -m pytest -q",
+            "python -m pip_audit --local",
+        ):
+            self.assertIn(command, workflow)
+        for binding in (
+            "ATIS_EXECUTION_OUTPUT: ${{ runner.temp }}\\atis-execution-output",
+            "TEMP: ${{ runner.temp }}\\atis-temp",
+            "TMP: ${{ runner.temp }}\\atis-temp",
+            "PYTEST_BASETEMP: ${{ runner.temp }}\\atis-pytest",
+            "COVERAGE_FILE: ${{ runner.temp }}\\atis-coverage\\.coverage",
+            "COVERAGE_XML: ${{ runner.temp }}\\atis-coverage\\coverage.xml",
+            "RUFF_CACHE_DIR: ${{ runner.temp }}\\atis-ruff-cache",
+            "MYPY_CACHE_DIR: ${{ runner.temp }}\\atis-mypy-cache",
+            "PYTHONPYCACHEPREFIX: ${{ runner.temp }}\\atis-python-cache",
+            "PYTEST_ADDOPTS: -p no:cacheprovider",
+        ):
+            self.assertIn(binding, workflow)
+        self.assertIn("--require-hashes -r $trustedLock", workflow)
+        self.assertIn("--no-build-isolation --no-deps .", workflow)
+        self.assertNotIn("coverage xml -o coverage.xml", workflow)
+
 
 class ArchivedRecordTests(unittest.TestCase):
     def test_pr33_exact_bytes_and_nonactive_provenance_are_preserved(self) -> None:
