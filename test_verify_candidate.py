@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import subprocess
@@ -679,6 +680,71 @@ class CandidateVerificationTests(unittest.TestCase):
         self.assertIn("--require-hashes -r $trustedLock", workflow)
         self.assertIn("--no-build-isolation --no-deps .", workflow)
         self.assertNotIn("coverage xml -o coverage.xml", workflow)
+
+    def test_workflow_isolates_and_preserves_cross_phase_evidence(self) -> None:
+        workflow = (Path(__file__).parent / ".github/workflows/m1-trusted.yml").read_text()
+        full_binding = (
+            "ATIS_EXECUTION_OUTPUT_FULL = Join-Path $runnerTemp "
+            "'atis-execution-output\\full'"
+        )
+        security_binding = (
+            "ATIS_EXECUTION_OUTPUT_SECURITY = Join-Path $runnerTemp "
+            "'atis-execution-output\\security'"
+        )
+        full_selection = "$env:ATIS_EXECUTION_OUTPUT = $env:ATIS_EXECUTION_OUTPUT_FULL"
+        security_selection = (
+            "$env:ATIS_EXECUTION_OUTPUT = $env:ATIS_EXECUTION_OUTPUT_SECURITY"
+        )
+        self.assertIn(full_binding, workflow)
+        self.assertIn(security_binding, workflow)
+        self.assertEqual(workflow.count(full_selection), 1)
+        self.assertEqual(workflow.count(security_selection), 1)
+        full_step = workflow.index("- name: Run independent M1 quality and acceptance gate")
+        full_pytest = workflow.index("python -m coverage run", full_step)
+        security_step = workflow.index(
+            "- name: Run explicit M1 security and provenance controls"
+        )
+        security_pytest = workflow.index("python -m pytest -q", security_step)
+        self.assertLess(workflow.index(full_selection, full_step), full_pytest)
+        self.assertLess(workflow.index(security_selection, security_step), security_pytest)
+        self.assertNotIn("Remove-Item", workflow)
+
+        with tempfile.TemporaryDirectory() as temporary_root:
+            root = Path(temporary_root).resolve() / "atis-execution-output"
+            full = root / "full"
+            security = root / "security"
+            candidate = root.parent / "candidate"
+            trusted = root.parent / "trusted"
+            candidate.mkdir()
+            trusted.mkdir()
+            for namespace in (full, security):
+                self.assertTrue(namespace.is_absolute())
+                self.assertFalse(namespace.is_relative_to(candidate))
+                self.assertFalse(namespace.is_relative_to(trusted))
+                namespace.mkdir(parents=True)
+                record = namespace / "m1-identity-compatibility-test.json"
+                payload = json.dumps(
+                    {"classification": "COMPATIBLE", "namespace": namespace.name},
+                    sort_keys=True,
+                ).encode("utf-8")
+                record.write_bytes(payload)
+                sidecar = record.with_suffix(".json.sha256")
+                sidecar.write_text(hashlib.sha256(payload).hexdigest() + "\n")
+                self.assertEqual(
+                    list(namespace.glob("m1-identity-compatibility-*.json")), [record]
+                )
+                self.assertEqual(
+                    sidecar.read_text().strip(), hashlib.sha256(payload).hexdigest()
+                )
+            full_record = full / "m1-identity-compatibility-test.json"
+            full_digest = hashlib.sha256(full_record.read_bytes()).hexdigest()
+            self.assertEqual(
+                list(full.glob("m1-identity-compatibility-*.json")), [full_record]
+            )
+            self.assertEqual(
+                hashlib.sha256(full_record.read_bytes()).hexdigest(), full_digest
+            )
+            self.assertEqual(len(list(security.glob("*.json"))), 1)
 
 
 class ArchivedRecordTests(unittest.TestCase):
