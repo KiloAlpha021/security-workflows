@@ -632,7 +632,15 @@ class CandidateVerificationTests(unittest.TestCase):
     def test_workflow_uses_one_isolated_trusted_python_environment(self) -> None:
         workflow = (Path(__file__).parent / ".github/workflows/m1-trusted.yml").read_text()
         self.assertIn("python-version: 3.12.10", workflow)
-        self.assertIn("TRUSTED_VENV: ${{ runner.temp }}\\atis-trusted-certification-venv", workflow)
+        job_prefix = workflow.split("    steps:\n", 1)[0]
+        self.assertNotIn("${{ runner.", job_prefix)
+        self.assertNotIn("${{ runner.temp }}", workflow)
+        self.assertIn("[string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)", workflow)
+        self.assertIn("[System.IO.Path]::IsPathFullyQualified($env:RUNNER_TEMP)", workflow)
+        self.assertIn("RUNNER_TEMP must be outside the GitHub workspace", workflow)
+        self.assertIn("TRUSTED_VENV = Join-Path $runnerTemp 'atis-trusted-certification-venv'", workflow)
+        self.assertIn("[System.Environment]::SetEnvironmentVariable", workflow)
+        self.assertIn("$env:GITHUB_ENV", workflow)
         self.assertIn("python -m venv $env:TRUSTED_VENV", workflow)
         self.assertNotIn("--system-site-packages", workflow)
         self.assertIn("$env:GITHUB_PATH", workflow)
@@ -656,16 +664,16 @@ class CandidateVerificationTests(unittest.TestCase):
         ):
             self.assertIn(command, workflow)
         for binding in (
-            "ATIS_EXECUTION_OUTPUT: ${{ runner.temp }}\\atis-execution-output",
-            "TEMP: ${{ runner.temp }}\\atis-temp",
-            "TMP: ${{ runner.temp }}\\atis-temp",
-            "PYTEST_BASETEMP: ${{ runner.temp }}\\atis-pytest",
-            "COVERAGE_FILE: ${{ runner.temp }}\\atis-coverage\\.coverage",
-            "COVERAGE_XML: ${{ runner.temp }}\\atis-coverage\\coverage.xml",
-            "RUFF_CACHE_DIR: ${{ runner.temp }}\\atis-ruff-cache",
-            "MYPY_CACHE_DIR: ${{ runner.temp }}\\atis-mypy-cache",
-            "PYTHONPYCACHEPREFIX: ${{ runner.temp }}\\atis-python-cache",
-            "PYTEST_ADDOPTS: -p no:cacheprovider",
+            "ATIS_EXECUTION_OUTPUT = Join-Path $runnerTemp 'atis-execution-output'",
+            "TEMP = Join-Path $runnerTemp 'atis-temp'",
+            "TMP = Join-Path $runnerTemp 'atis-temp'",
+            "PYTEST_BASETEMP = Join-Path $runnerTemp 'atis-pytest'",
+            "COVERAGE_FILE = Join-Path $runnerTemp 'atis-coverage\\.coverage'",
+            "COVERAGE_XML = Join-Path $runnerTemp 'atis-coverage\\coverage.xml'",
+            "RUFF_CACHE_DIR = Join-Path $runnerTemp 'atis-ruff-cache'",
+            "MYPY_CACHE_DIR = Join-Path $runnerTemp 'atis-mypy-cache'",
+            "PYTHONPYCACHEPREFIX = Join-Path $runnerTemp 'atis-python-cache'",
+            "PYTEST_ADDOPTS = '-p no:cacheprovider'",
         ):
             self.assertIn(binding, workflow)
         self.assertIn("--require-hashes -r $trustedLock", workflow)
