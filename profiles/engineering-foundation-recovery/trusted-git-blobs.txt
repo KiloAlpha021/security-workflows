@@ -1,0 +1,4 @@
+9677ebe3159527cf0677a19e5da415d51dd9b8c5  scripts/m1_engineering_foundation.py
+4e0531483d708d6e376447f01f72b6882fbe33a7  tests/test_blocked_assessment.py
+6fa8a6ca254c81df2a86217b222f919acfc88b75  tests/test_closure_security.py
+72e7ba1b4f5bb3773c9316746d82ad2793ed8d94  tests/test_engineering_foundation.py
