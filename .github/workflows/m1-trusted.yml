@@ -58,6 +58,8 @@ jobs:
           $bindings = [ordered]@{
             TRUSTED_VENV = Join-Path $runnerTemp 'atis-trusted-certification-venv'
             ATIS_EXECUTION_OUTPUT = Join-Path $runnerTemp 'atis-execution-output'
+            ATIS_EXECUTION_OUTPUT_FULL = Join-Path $runnerTemp 'atis-execution-output\full'
+            ATIS_EXECUTION_OUTPUT_SECURITY = Join-Path $runnerTemp 'atis-execution-output\security'
             TEMP = Join-Path $runnerTemp 'atis-temp'
             TMP = Join-Path $runnerTemp 'atis-temp'
             PYTEST_BASETEMP = Join-Path $runnerTemp 'atis-pytest'
@@ -118,6 +120,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:ATIS_EXECUTION_OUTPUT = $env:ATIS_EXECUTION_OUTPUT_FULL
           python -m ruff check src tests scripts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m mypy src/automated_trading_bot
@@ -133,6 +136,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:ATIS_EXECUTION_OUTPUT = $env:ATIS_EXECUTION_OUTPUT_SECURITY
           python -m pytest -q --basetemp $env:PYTEST_BASETEMP-security tests/test_architecture.py tests/test_blocked_assessment.py tests/test_closure_security.py tests/test_closure_traceability.py tests/test_dependency_lock.py tests/test_engineering_foundation.py tests/test_hosted_branch_protection.py tests/test_m1_completion.py tests/test_replay.py tests/test_stage0b_phase39.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip_audit --local
