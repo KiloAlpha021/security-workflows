@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: 5c7922d626e5835da606a65c6dd9658352afc29c
+          ref: 3e9f1aa7f4830a2aa87c93c8f01662839285a179
           path: protected
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: ab2c511a38def0e7721492ac1213e845133c6840
+          ref: 2605bacf02cd30b49d57ff813570911cb8a97fe5
           path: candidate
           persist-credentials: false
           fetch-depth: 0

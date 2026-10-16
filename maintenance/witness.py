@@ -1,4 +1,4 @@
-"""Finite S2 technical certification of one sealed audit-lock activation.
+"""Finite certification of the sealed D5 Windows fixture correction.
 
 Local proposal; independent source admission is not established. Only after
 separate admission and owner authorization may protection bind this
@@ -18,20 +18,20 @@ import sys
 
 TARGET = "KiloAlpha021/security-policy"
 SOURCE = "KiloAlpha021/security-workflows"
-SOURCE_BRANCH = "programme-a-s2-audit-lock-certifier-v1"
+SOURCE_BRANCH = "final-recovery-policy-maintenance-certifier-v1"
 WORKFLOW = ".github/workflows/security-policy-maintenance.yml"
-BASE = "5c7922d626e5835da606a65c6dd9658352afc29c"
-BASE_TREE = "708e33a981ea7218208cae5a9da930ff19de5063"
-HEAD = "ab2c511a38def0e7721492ac1213e845133c6840"
-HEAD_TREE = "f8e879cc5aa4aa393f198f4e082d73162a4ef68f"
+BASE = "3e9f1aa7f4830a2aa87c93c8f01662839285a179"
+BASE_TREE = "f8e879cc5aa4aa393f198f4e082d73162a4ef68f"
+HEAD = "2605bacf02cd30b49d57ff813570911cb8a97fe5"
+HEAD_TREE = "9dd71ad7b7164db624862a3acc2b1dc9cf2be7b2"
 EXPECTED_FILES = {
-    "requirements-audit.lock": (
-        "04f514da5dddb6aa83723cfba28448972c8a38ac",
-        "e1f6d6d95efa753187742474ae0a13199f9e8e7777decd3464bc9928780333c2"),
+    "test_verify_security_workflows.py": (
+        "e0a50e777c53663f2fdb8a6b727413acc0123e0f",
+        "f5c510ffa50dbde9f1fe8c26094599025199c8487eec6a915cbbd5090434efa3"),
 }
-OLD_AUDIT = (
-    "dbfa6a4d8ef8c344009ad3a15007b2b1c98511fe",
-    "bd75e0d124e602152a78c08f8f2c8e6ed7a8852bfce4a4b189b605a7f064ce34",
+AUDIT_LOCK = (
+    "04f514da5dddb6aa83723cfba28448972c8a38ac",
+    "e1f6d6d95efa753187742474ae0a13199f9e8e7777decd3464bc9928780333c2",
 )
 POLICY_LOCK = (
     "b11e8ca274a5426789be10d24919679c8da0aa4f",
@@ -148,7 +148,8 @@ def verify(base_root: Path, candidate: Path, head: str = HEAD,
                 "candidate byte substitution: " + path)
         canonical(raw)
     for root, revision, path, expected in (
-            (base_root, BASE, "requirements-audit.lock", OLD_AUDIT),
+            (base_root, BASE, "requirements-audit.lock", AUDIT_LOCK),
+            (candidate, HEAD, "requirements-audit.lock", AUDIT_LOCK),
             (base_root, BASE, "requirements-policy.lock", POLICY_LOCK),
             (candidate, HEAD, "requirements-policy.lock", POLICY_LOCK)):
         blob, digest = expected

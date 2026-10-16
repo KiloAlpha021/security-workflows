@@ -37,16 +37,16 @@ class WitnessTests(unittest.TestCase):
 
     def test_previous_finite_tuple_is_historical_only(self):
         source = Path(__file__).resolve().parent.parent
-        predecessor = "532fa64abc856063f624ec0aff6838127e7a780b"
+        predecessor = "ed41da21243c4949b3eb890f444c10e5bde0546a"
         self.assertEqual(witness.git(source, "rev-parse", predecessor + "^{tree}")
-                         .decode().strip(), "cf16f0e3baccafb0d4014eff54c55a392fd4f92b")
+                         .decode().strip(), "fb3a3c1e8713aae3a6e500a756ddecc37d97d8b9")
         old = witness.git(source, "show", predecessor + ":maintenance/witness.py")
-        self.assertIn(b'HEAD = "f49b7f0770d0bba83be074a078431fc356d0912e"', old)
+        self.assertIn(b'HEAD = "ab2c511a38def0e7721492ac1213e845133c6840"', old)
         with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
             witness.verify(self.base, self.candidate,
-                           "f49b7f0770d0bba83be074a078431fc356d0912e",
-                           "eaab2cff8f02ac1fc6214c303d1b0758f3fac488",
-                           "523d81fc6f4d8788e2b6b8cbab72a87b1d8accc6")
+                           "ab2c511a38def0e7721492ac1213e845133c6840",
+                           "f8e879cc5aa4aa393f198f4e082d73162a4ef68f",
+                           "5c7922d626e5835da606a65c6dd9658352afc29c")
 
     def test_each_expected_sha256_is_independently_bound(self):
         for path, (blob, _digest) in witness.EXPECTED_FILES.items():
@@ -483,8 +483,8 @@ class WitnessTests(unittest.TestCase):
                            "708e33a981ea7218208cae5a9da930ff19de5063",
                            "af7a95105466649a538734a16919a81705b5ad8f")
 
-    def test_old_audit_and_unchanged_policy_lock_are_pinned(self):
-        for field in ("OLD_AUDIT", "POLICY_LOCK"):
+    def test_unchanged_audit_and_policy_locks_are_pinned(self):
+        for field in ("AUDIT_LOCK", "POLICY_LOCK"):
             blob, digest = getattr(witness, field)
             for replacement in (("0" * 40, digest), (blob, "0" * 64)):
                 with self.subTest(field=field, replacement=replacement), mock.patch.object(
@@ -493,19 +493,11 @@ class WitnessTests(unittest.TestCase):
                         witness.Rejected, "dependency"):
                     witness.verify(self.base, self.candidate)
 
-    def test_protected_bootstrap_accepts_exact_sealed_s2_only_as_proposal(self):
-        spec = importlib.util.spec_from_file_location("s2_bootstrap", self.base / "protected_policy_bootstrap.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        module._audit_seed(self.base, witness.BASE)
-        module._audit_head(self.candidate, witness.HEAD, witness.BASE)
-        self.assertEqual(module._audit_state(self.base, witness.BASE), ("PENDING", witness.BASE))
-        self.assertEqual(module._audit_state(self.candidate, witness.HEAD), ("PROPOSAL", witness.BASE))
-        with self.assertRaises(module.BootstrapError):
-            module._audit_protected_identity(self.candidate, witness.HEAD)
-        with self.assertRaises(module.BootstrapError):
-            module._audit_head(self.candidate, witness.BASE, witness.BASE)
+    def test_test_only_successor_preserves_protected_bootstrap_and_locks(self):
+        for relative in ("protected_policy_bootstrap.py", "requirements-policy.lock",
+                         "requirements-audit.lock", ".github/workflows/security-workflows-policy.yml"):
+            self.assertEqual(witness.git(self.base, "show", f"{witness.BASE}:{relative}"),
+                             witness.git(self.candidate, "show", f"{witness.HEAD}:{relative}"))
 
 
     def test_merge_fixture_topology_and_attribution_fail_closed(self):
