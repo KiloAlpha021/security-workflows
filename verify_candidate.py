@@ -353,18 +353,34 @@ def select_control_profile(
     for profile in profiles:
         if set(profile["allowed_evolved_paths"]) != changed:
             continue
-        if (
-            event_name != "pull_request"
-            or profile["target_base"] != event_base_sha
-            or profile["target_head"] != event_head_sha
-        ):
+        if event_name != "pull_request":
             continue
         try:
-            if (
+            profile_tree_matches = (
                 git(candidate, "rev-parse", f"{profile['target_head']}^{{tree}}")
-                != profile["target_head_tree"]
-            ):
+                == profile["target_head_tree"]
+            )
+            exact_successor = (
+                profile["target_base"] == event_base_sha
+                and profile["target_head"] == event_head_sha
+            )
+            if not profile_tree_matches:
                 continue
+            if not exact_successor:
+                protected_baseline_continuation = (
+                    git(
+                        candidate,
+                        "merge-base",
+                        "--is-ancestor",
+                        profile["target_head"],
+                        event_base_sha,
+                    )
+                    == ""
+                    and git(candidate, "rev-parse", f"{event_base_sha}^{{tree}}")
+                    == profile["target_head_tree"]
+                )
+                if not protected_baseline_continuation:
+                    continue
         except ValueError:
             continue
         transitions = {item["path"]: item for item in profile["transitions"]}

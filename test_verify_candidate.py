@@ -288,6 +288,34 @@ class CandidateVerificationTests(unittest.TestCase):
             (PurePosixPath("requirements-dev.lock"), "stage3-control-successor"),
         )
 
+    def test_protected_tree_continuity_selects_existing_control_profile(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile()
+        protected_head = self.sha
+        git(self.candidate, "commit", "--allow-empty", "-m", "protected merge")
+        protected_merge = git(self.candidate, "rev-parse", "HEAD")
+        self.write_candidate("unrelated.txt", "stage 4 candidate\n")
+        self.commit_candidate("unrelated candidate")
+        self.assertEqual(
+            self.check(base_sha=protected_merge, head_sha=self.sha),
+            (PurePosixPath("requirements-dev.lock"), "stage3-control-successor"),
+        )
+        self.assertEqual(
+            git(self.candidate, "rev-parse", f"{protected_head}^{{tree}}"),
+            git(self.candidate, "rev-parse", f"{protected_merge}^{{tree}}"),
+        )
+
+    def test_protected_tree_continuity_rejects_changed_base_tree(self) -> None:
+        self.make_control_successor()
+        self.add_control_profile()
+        self.write_candidate("base-drift.txt", "different protected tree\n")
+        self.commit_candidate("protected base drift")
+        protected_base = self.sha
+        self.write_candidate("unrelated.txt", "stage 4 candidate\n")
+        self.commit_candidate("unrelated candidate")
+        with self.assertRaisesRegex(ValueError, "No applicable"):
+            self.check(base_sha=protected_base, head_sha=self.sha)
+
     def test_control_successor_preserves_historical_manifest(self) -> None:
         historical = (self.trusted / "trusted-git-blobs.txt").read_bytes()
         self.make_control_successor()
