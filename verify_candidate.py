@@ -355,6 +355,7 @@ def select_control_profile(
             continue
         if event_name != "pull_request":
             continue
+        transitions = {item["path"]: item for item in profile["transitions"]}
         try:
             profile_tree_matches = (
                 git(candidate, "rev-parse", f"{profile['target_head']}^{{tree}}")
@@ -376,14 +377,16 @@ def select_control_profile(
                         event_base_sha,
                     )
                     == ""
-                    and git(candidate, "rev-parse", f"{event_base_sha}^{{tree}}")
-                    == profile["target_head_tree"]
+                    and all(
+                        git(candidate, "rev-parse", f"{event_base_sha}:{path}")
+                        == transition["successor_blob"]
+                        for path, transition in transitions.items()
+                    )
                 )
                 if not protected_baseline_continuation:
                     continue
         except ValueError:
             continue
-        transitions = {item["path"]: item for item in profile["transitions"]}
         if any(
             historical.get(path) != transition["predecessor_blob"]
             or candidate_blob(candidate, path) != transition["successor_blob"]
