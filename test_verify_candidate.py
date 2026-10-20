@@ -305,14 +305,40 @@ class CandidateVerificationTests(unittest.TestCase):
             git(self.candidate, "rev-parse", f"{protected_merge}^{{tree}}"),
         )
 
-    def test_protected_tree_continuity_rejects_changed_base_tree(self) -> None:
+    def test_protected_control_continuity_allows_unrelated_base_evolution(self) -> None:
         self.make_control_successor()
         self.add_control_profile()
-        self.write_candidate("base-drift.txt", "different protected tree\n")
-        self.commit_candidate("protected base drift")
+        self.write_candidate("base-drift.txt", "legitimate unrelated evolution\n")
+        self.commit_candidate("protected unrelated evolution")
         protected_base = self.sha
         self.write_candidate("unrelated.txt", "stage 4 candidate\n")
         self.commit_candidate("unrelated candidate")
+        self.assertEqual(
+            self.check(base_sha=protected_base, head_sha=self.sha),
+            (PurePosixPath("requirements-dev.lock"), "stage3-control-successor"),
+        )
+
+    def test_protected_control_continuity_rejects_changed_base_control(self) -> None:
+        self.make_control_successor()
+        successor = (self.candidate / "scripts/immutable.py").read_text(encoding="utf-8")
+        self.add_control_profile()
+        self.write_candidate("scripts/immutable.py", "# unauthorized protected change\n")
+        self.commit_candidate("protected control drift")
+        protected_base = self.sha
+        self.write_candidate("scripts/immutable.py", successor)
+        self.commit_candidate("restore registered control for candidate")
+        with self.assertRaisesRegex(ValueError, "No applicable"):
+            self.check(base_sha=protected_base, head_sha=self.sha)
+
+    def test_protected_control_continuity_rejects_missing_base_control(self) -> None:
+        self.make_control_successor()
+        successor = (self.candidate / "scripts/immutable.py").read_text(encoding="utf-8")
+        self.add_control_profile()
+        (self.candidate / "scripts/immutable.py").unlink()
+        self.commit_candidate("remove protected control")
+        protected_base = self.sha
+        self.write_candidate("scripts/immutable.py", successor)
+        self.commit_candidate("restore registered control for candidate")
         with self.assertRaisesRegex(ValueError, "No applicable"):
             self.check(base_sha=protected_base, head_sha=self.sha)
 
