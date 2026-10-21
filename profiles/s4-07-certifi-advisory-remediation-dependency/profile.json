@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "s4-07-certifi-advisory-remediation-dependency",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "S4-07 CERTIFI ADVISORY REMEDIATION",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "f7cf0df47ffc4e1309803b48dc26114851dfb0ee",
+    "requirements-dev.in": "c6cf9a9ef5beafab3b30e16ca0f60c1a784a7796",
+    "requirements-dev.lock": "30c531abc4b183d7e6114128b1f12be0d954b034",
+    "tests/test_dependency_lock.py": "6601244d11e9705c3cbfbcedd0057788debaf275"
+  },
+  "trusted_lock_path": "profiles/s4-07-certifi-advisory-remediation-dependency/requirements-dev.lock",
+  "trusted_lock_blob": "30c531abc4b183d7e6114128b1f12be0d954b034",
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}
