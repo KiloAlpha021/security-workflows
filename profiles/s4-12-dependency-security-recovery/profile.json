@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "s4-12-dependency-security-recovery",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "S4-12 SETUPTOOLS AND FILELOCK SECURITY REMEDIATION",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "2dfbbf80810f222f904869cb7cdd6dd4fed3da16",
+    "requirements-dev.in": "21bbc60bcc53043637b5ac20340f7554f2e7685b",
+    "requirements-dev.lock": "c9946cf9fdc04781fbd48cd7ea176fc7e0845e4e",
+    "tests/test_dependency_lock.py": "fe60e5e0f66f3baa9f69a007292169142c01b4e6"
+  },
+  "trusted_lock_path": "profiles/s4-12-dependency-security-recovery/requirements-dev.lock",
+  "trusted_lock_blob": "c9946cf9fdc04781fbd48cd7ea176fc7e0845e4e",
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}
