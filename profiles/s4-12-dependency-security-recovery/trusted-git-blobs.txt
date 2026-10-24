@@ -1,0 +1,4 @@
+2dfbbf80810f222f904869cb7cdd6dd4fed3da16  pyproject.toml
+21bbc60bcc53043637b5ac20340f7554f2e7685b  requirements-dev.in
+c9946cf9fdc04781fbd48cd7ea176fc7e0845e4e  requirements-dev.lock
+fe60e5e0f66f3baa9f69a007292169142c01b4e6  tests/test_dependency_lock.py
