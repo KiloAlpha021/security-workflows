@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "deps-msgpack-security-006",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "MSGPACK 1.2.3 SECURITY REMEDIATION",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "2dfbbf80810f222f904869cb7cdd6dd4fed3da16",
+    "requirements-dev.in": "21bbc60bcc53043637b5ac20340f7554f2e7685b",
+    "requirements-dev.lock": "541fa78c84d1312cc64af64d734b3c171536ff91",
+    "tests/test_dependency_lock.py": "ee2946970e46f720030a5cd22013f2cf7c2586b3"
+  },
+  "trusted_lock_path": "profiles/deps-msgpack-security-006/requirements-dev.lock",
+  "trusted_lock_blob": "541fa78c84d1312cc64af64d734b3c171536ff91",
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}
