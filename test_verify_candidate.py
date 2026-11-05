@@ -44,7 +44,9 @@ class CandidateVerificationTests(unittest.TestCase):
             git(root, "config", "user.email", "test@example.invalid")
             git(root, "remote", "add", "origin", f"https://github.com/KiloAlpha021/{remote}.git")
 
-        self.write_candidate("pyproject.toml", "[project]\nname='test'\n")
+        self.write_candidate(
+            "pyproject.toml", "[project]\nname='test'\ndependencies=[]\n"
+        )
         self.write_candidate("requirements-dev.lock", "historical locked\n")
         self.write_candidate("tests/test_dependency_lock.py", "# historical dependency control\n")
         self.write_candidate("scripts/immutable.py", "# immutable M1 control\n")
@@ -81,8 +83,14 @@ class CandidateVerificationTests(unittest.TestCase):
         git(self.candidate, "commit", "-m", message)
         self.sha = git(self.candidate, "rev-parse", "HEAD")
 
-    def successor_candidate(self) -> dict[str, str]:
-        self.write_candidate("pyproject.toml", "[project]\nname='successor'\n")
+    def successor_candidate(
+        self, dependencies: list[str] | None = None
+    ) -> dict[str, str]:
+        dependency_list = json.dumps(dependencies or [])
+        self.write_candidate(
+            "pyproject.toml",
+            f"[project]\nname='successor'\ndependencies={dependency_list}\n",
+        )
         self.write_candidate("requirements-dev.in", "jsonschema==4.26.0\n")
         self.write_candidate("requirements-dev.lock", "successor locked\n")
         self.write_candidate("tests/test_dependency_lock.py", "# exact successor control\n")
@@ -275,6 +283,93 @@ class CandidateVerificationTests(unittest.TestCase):
                 "historical-m1",
             ),
         )
+
+    def test_schema_two_exact_runtime_dependencies_are_trusted(self) -> None:
+        dependencies = [
+            "psycopg==3.3.6",
+            "psycopg-binary==3.3.6",
+            "tzdata==2026.6",
+        ]
+        blobs = self.successor_candidate(dependencies)
+        self.add_profile(
+            blobs,
+            schema_version=2,
+            authorized_runtime_dependencies=dependencies,
+        )
+        self.assertEqual(
+            self.check(),
+            (
+                PurePosixPath(
+                    "profiles/stage3-corpus-assurance/requirements-dev.lock"
+                ),
+                "historical-m1",
+            ),
+        )
+
+    def assert_runtime_dependency_mismatch_fails(
+        self, actual: list[str], authorized: list[str]
+    ) -> None:
+        blobs = self.successor_candidate(actual)
+        self.add_profile(
+            blobs,
+            schema_version=2,
+            authorized_runtime_dependencies=authorized,
+        )
+        with self.assertRaisesRegex(ValueError, "runtime dependencies"):
+            self.check()
+
+    def test_additional_runtime_dependency_fails(self) -> None:
+        self.assert_runtime_dependency_mismatch_fails(
+            ["psycopg==3.3.6", "tzdata==2026.6"], ["psycopg==3.3.6"]
+        )
+
+    def test_missing_runtime_dependency_fails(self) -> None:
+        self.assert_runtime_dependency_mismatch_fails(
+            ["psycopg==3.3.6"], ["psycopg==3.3.6", "tzdata==2026.6"]
+        )
+
+    def test_different_runtime_dependency_version_fails(self) -> None:
+        self.assert_runtime_dependency_mismatch_fails(
+            ["psycopg==3.3.5"], ["psycopg==3.3.6"]
+        )
+
+    def test_reordered_runtime_dependencies_fail(self) -> None:
+        self.assert_runtime_dependency_mismatch_fails(
+            ["tzdata==2026.6", "psycopg==3.3.6"],
+            ["psycopg==3.3.6", "tzdata==2026.6"],
+        )
+
+    def assert_invalid_authorized_dependency_fails(self, dependencies: list[str]) -> None:
+        blobs = self.successor_candidate([])
+        self.add_profile(
+            blobs,
+            schema_version=2,
+            authorized_runtime_dependencies=dependencies,
+        )
+        with self.assertRaisesRegex(ValueError, "authorized runtime dependency"):
+            self.check()
+
+    def test_duplicate_authorized_dependency_fails(self) -> None:
+        self.assert_invalid_authorized_dependency_fails(
+            ["psycopg==3.3.6", "psycopg==3.3.6"]
+        )
+
+    def test_unpinned_authorized_dependency_fails(self) -> None:
+        self.assert_invalid_authorized_dependency_fails(["psycopg>=3.3.6"])
+
+    def test_url_authorized_dependency_fails(self) -> None:
+        self.assert_invalid_authorized_dependency_fails(
+            ["psycopg==https://example.invalid/package.whl"]
+        )
+
+    def test_editable_authorized_dependency_fails(self) -> None:
+        self.assert_invalid_authorized_dependency_fails(["-e psycopg==3.3.6"])
+
+    def test_schema_one_profile_cannot_authorize_runtime_dependencies(self) -> None:
+        blobs = self.successor_candidate(["psycopg==3.3.6"])
+        self.add_profile(blobs)
+        with self.assertRaisesRegex(ValueError, "runtime dependencies"):
+            self.check()
 
     def make_control_successor(self) -> None:
         self.write_candidate("scripts/immutable.py", "# stronger immutable control\n")
@@ -597,6 +692,15 @@ class CandidateVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "lineage"):
             self.check()
 
+    def test_dependency_authority_expansion_fails(self) -> None:
+        blobs = self.successor_candidate()
+        self.add_profile(
+            blobs,
+            authority_limitations=[*AUTHORITY_LIMITATIONS, "MERGE_AUTHORITY"],
+        )
+        with self.assertRaisesRegex(ValueError, "authority limitations"):
+            self.check()
+
     def test_multiple_matching_profiles_fail(self) -> None:
         blobs = self.successor_candidate()
         self.add_profile(blobs)
@@ -676,6 +780,11 @@ class CandidateVerificationTests(unittest.TestCase):
         self.assertIn("steps.trust_profile.outputs.dependency_lock", workflow)
         self.assertNotIn("--profile", workflow)
         self.assertNotIn("../trusted/requirements-dev.lock\n", workflow)
+        self.assertNotIn("p['project']['dependencies']==[]", workflow)
+        self.assertIn(
+            "Runtime dependencies are matched exactly against the selected protected",
+            workflow,
+        )
         for step in (
             "Install exact trusted dependencies",
             "Verify dependency and project identity",
