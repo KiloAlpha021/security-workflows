@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "profile_id": "stage5-f0-u1-pywin32-312-dependency-successor",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "STAGE 5 FOUNDATION/U1 PYWIN32 312 DEPENDENCY SUCCESSOR",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "8fbe6ec8bbcd2b8b89e705b2bfe5d97f749c2764",
+    "requirements-dev.in": "243635fd813f15d21a1e7eb23e58e3790c2141a9",
+    "requirements-dev.lock": "b736b99935dc8f6bb3fab8ea593c941d38d25efe",
+    "tests/test_dependency_lock.py": "f44638ba2ef64175173e098f934504be2f877b20"
+  },
+  "trusted_lock_path": "profiles/stage5-f0-u1-pywin32-312-dependency-successor/requirements-dev.lock",
+  "trusted_lock_blob": "b736b99935dc8f6bb3fab8ea593c941d38d25efe",
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}
