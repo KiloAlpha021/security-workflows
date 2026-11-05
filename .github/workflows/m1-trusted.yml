@@ -12,6 +12,10 @@ jobs:
     if: github.repository == 'KiloAlpha021/automated-trading-bot'
     name: trusted-m1-evaluator
     runs-on: windows-latest
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
     steps:
       - name: Check out exact trading candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
