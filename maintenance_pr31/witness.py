@@ -1,7 +1,9 @@
 """Finite independent maintenance witness for security-policy PR #31.
 
-This witness admits exactly one immutable policy successor.  It is not a
-general maintenance authority and cannot select its own trusted source.
+This witness admits exactly one immutable policy successor.  It authenticates
+GitHub's event-selected synthetic merge by its exact ordered parents and tree,
+rather than treating the regenerable merge commit identifier as authority.  It
+is not a general maintenance authority and cannot select its own trusted source.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ BASE = "f36ed0b258a0581903698cc2cfac923ded19bd30"
 BASE_TREE = "9dd71ad7b7164db624862a3acc2b1dc9cf2be7b2"
 HEAD = "852b1e80e4dc86517f6023aad9d78c87d99b95c2"
 HEAD_TREE = "d690abf621fa2d844f19d5c40ddefaab5a16cf53"
-MERGE = "ef48261a4b1a9ca95254a5107fb91387f4a95b91"
+HISTORICAL_MERGE = "ef48261a4b1a9ca95254a5107fb91387f4a95b91"
 HISTORICAL_FIXTURE_SHA256 = (
     "578810835df8328547df8d52ce0654a179aab22df2636fa9284d8cb4065ed3c6"
 )
@@ -168,8 +170,12 @@ def validate_event(
     )
     require(pr["head"]["sha"] == HEAD, "candidate substitution")
     require(pr["state"] == "open" and not pr["merged"], "PR is not open/unmerged")
-    require(sha(evaluation_sha) == MERGE, "synthetic merge substitution")
-    return HEAD, BASE, MERGE
+    evaluation_sha = sha(evaluation_sha)
+    require(
+        pr.get("merge_commit_sha") == evaluation_sha,
+        "synthetic merge event substitution",
+    )
+    return HEAD, BASE, evaluation_sha
 
 
 def _check_blob(
@@ -197,21 +203,22 @@ def verify(
     head: str = HEAD,
     tree: str = HEAD_TREE,
     base: str = BASE,
-    merge: str = MERGE,
+    merge: str | None = None,
 ) -> dict:
-    require(
-        (base, head, tree, merge) == (BASE, HEAD, HEAD_TREE, MERGE),
-        "finite identity substitution",
-    )
+    require((base, head, tree) == (BASE, HEAD, HEAD_TREE), "finite identity substitution")
     base_root = base_root.resolve(strict=True)
     candidate_root = candidate_root.resolve(strict=True)
     merge_root = merge_root.resolve(strict=True)
     separate_roots(base_root, candidate_root, merge_root)
+    observed_merge = git(merge_root, "rev-parse", "HEAD").decode().strip()
+    if merge is None:
+        merge = observed_merge
+    require(sha(merge) == observed_merge, "synthetic merge checkout substitution")
 
     for root, revision, expected_tree in (
         (base_root, BASE, BASE_TREE),
         (candidate_root, HEAD, HEAD_TREE),
-        (merge_root, MERGE, HEAD_TREE),
+        (merge_root, merge, HEAD_TREE),
     ):
         clean_committed_root(root, revision, TARGET)
         require(
@@ -229,9 +236,13 @@ def verify(
         "commit count substitution",
     )
     require(
-        git(merge_root, "rev-list", "--parents", "-n", "1", MERGE).decode().split()
-        == [MERGE, BASE, HEAD],
+        git(merge_root, "rev-list", "--parents", "-n", "1", merge).decode().split()
+        == [merge, BASE, HEAD],
         "synthetic merge parent substitution",
+    )
+    require(
+        git(merge_root, "diff", "--quiet", HEAD, merge) == b"",
+        "synthetic merge content substitution",
     )
 
     expected_cone = "".join(
@@ -278,13 +289,13 @@ def verify(
         "base_tree": BASE_TREE,
         "head": HEAD,
         "tree": HEAD_TREE,
-        "merge": MERGE,
+        "merge": merge,
         "parent": BASE,
         "commits": 1,
         "files": sorted(EXPECTED_FILES),
         "historical_fixture_sha256": HISTORICAL_FIXTURE_SHA256,
         "cleanliness": "PASS",
-        "result": "EXACT_FINITE_BINDING_PASS",
+        "result": "EXACT_STABLE_MERGE_BINDING_PASS",
     }
 
 
