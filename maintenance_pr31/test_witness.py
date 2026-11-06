@@ -78,9 +78,17 @@ def synthetic_root(
     command = ["git", "-C", str(root), "commit-tree", tree]
     for parent in parents:
         command.extend(["-p", parent])
+    commit_environment = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Independent witness fixture",
+        "GIT_AUTHOR_EMAIL": "witness-fixture@example.invalid",
+        "GIT_COMMITTER_NAME": "Independent witness fixture",
+        "GIT_COMMITTER_EMAIL": "witness-fixture@example.invalid",
+    }
     generated = subprocess.check_output(
         command,
         input=b"regenerated synthetic merge\n",
+        env=commit_environment,
     ).decode().strip()
     subprocess.run(
         ["git", "-C", str(root), "reset", "--hard", generated],
