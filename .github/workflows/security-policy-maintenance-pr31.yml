@@ -38,11 +38,11 @@ jobs:
           path: candidate
           persist-credentials: false
           fetch-depth: 0
-      - name: Check out exact PR31 synthetic merge
+      - name: Check out current PR31 synthetic merge
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: ef48261a4b1a9ca95254a5107fb91387f4a95b91
+          ref: refs/pull/31/merge
           path: evaluation
           persist-credentials: false
           fetch-depth: 0
@@ -117,11 +117,11 @@ jobs:
           path: candidate
           persist-credentials: false
           fetch-depth: 0
-      - name: Check out exact PR31 synthetic merge
+      - name: Check out event-selected PR31 synthetic merge
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: ef48261a4b1a9ca95254a5107fb91387f4a95b91
+          ref: ${{ github.sha }}
           path: evaluation
           persist-credentials: false
           fetch-depth: 0

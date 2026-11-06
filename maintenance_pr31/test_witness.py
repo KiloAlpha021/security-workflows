@@ -11,7 +11,9 @@ import tempfile
 import unittest
 
 
-_SPEC = importlib.util.spec_from_file_location("maintenance_pr31_witness", Path(__file__).with_name("witness.py"))
+_SPEC = importlib.util.spec_from_file_location(
+    "maintenance_pr31_witness", Path(__file__).with_name("witness.py")
+)
 if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError("witness import specification unavailable")
 witness = importlib.util.module_from_spec(_SPEC)
@@ -26,7 +28,7 @@ def git(root: Path, *args: str) -> str:
     ).strip()
 
 
-def event() -> dict:
+def event(merge: str) -> dict:
     return {
         "number": witness.PR_NUMBER,
         "pull_request": {
@@ -42,8 +44,51 @@ def event() -> dict:
             "state": "open",
             "merged": False,
             "draft": True,
+            "merge_commit_sha": merge,
         },
     }
+
+
+def synthetic_root(
+    source: Path,
+    directory: Path,
+    parents: list[str],
+    *,
+    alter_tree: bool = False,
+) -> tuple[Path, str]:
+    root = directory / "synthetic"
+    subprocess.run(
+        ["git", "clone", "--no-hardlinks", str(source), str(root)],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    subprocess.run(
+        [
+            "git", "-C", str(root), "remote", "set-url", "origin",
+            "https://github.com/" + witness.TARGET,
+        ],
+        check=True,
+    )
+    tree = witness.HEAD_TREE
+    if alter_tree:
+        (root / "unauthorised.txt").write_text("unauthorised\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "unauthorised.txt"], check=True)
+        tree = git(root, "write-tree")
+    command = ["git", "-C", str(root), "commit-tree", tree]
+    for parent in parents:
+        command.extend(["-p", parent])
+    generated = subprocess.check_output(
+        command,
+        input=b"regenerated synthetic merge\n",
+    ).decode().strip()
+    subprocess.run(
+        ["git", "-C", str(root), "reset", "--hard", generated],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return root, generated
 
 
 class SuccessorWitnessTests(unittest.TestCase):
@@ -52,27 +97,29 @@ class SuccessorWitnessTests(unittest.TestCase):
         cls.base = Path(os.environ["WITNESS_BASE_ROOT"]).resolve(strict=True)
         cls.head = Path(os.environ["WITNESS_HEAD_ROOT"]).resolve(strict=True)
         cls.merge = Path(os.environ["WITNESS_MERGE_ROOT"]).resolve(strict=True)
+        cls.merge_sha = git(cls.merge, "rev-parse", "HEAD")
 
     def test_01_exact_pr31_positive(self) -> None:
         result = witness.verify(self.base, self.head, self.merge)
-        self.assertEqual(result["result"], "EXACT_FINITE_BINDING_PASS")
+        self.assertEqual(result["result"], "EXACT_STABLE_MERGE_BINDING_PASS")
+        self.assertEqual(result["merge"], self.merge_sha)
         self.assertEqual(result["pull_request"], 31)
         self.assertEqual(result["files"], sorted(witness.EXPECTED_FILES))
 
     def test_02_exact_event_positive(self) -> None:
         self.assertEqual(
             witness.validate_event(
-                event(), "pull_request", witness.TARGET, witness.MERGE
+                event(self.merge_sha), "pull_request", witness.TARGET, self.merge_sha
             ),
-            (witness.HEAD, witness.BASE, witness.MERGE),
+            (witness.HEAD, witness.BASE, self.merge_sha),
         )
 
     def assert_event_rejected(self, mutate, message: str) -> None:
-        candidate = event()
+        candidate = event(self.merge_sha)
         mutate(candidate)
         with self.assertRaisesRegex(witness.Rejected, message):
             witness.validate_event(
-                candidate, "pull_request", witness.TARGET, witness.MERGE
+                candidate, "pull_request", witness.TARGET, self.merge_sha
             )
 
     def test_03_wrong_base_rejected(self) -> None:
@@ -89,7 +136,9 @@ class SuccessorWitnessTests(unittest.TestCase):
 
     def test_05_wrong_repository_rejected(self) -> None:
         with self.assertRaisesRegex(witness.Rejected, "wrong target/event"):
-            witness.validate_event(event(), "pull_request", "attacker/repo", witness.MERGE)
+            witness.validate_event(
+                event(self.merge_sha), "pull_request", "attacker/repo", self.merge_sha
+            )
 
     def test_06_wrong_pr_number_rejected(self) -> None:
         self.assert_event_rejected(
@@ -104,8 +153,8 @@ class SuccessorWitnessTests(unittest.TestCase):
         )
 
     def test_08_synthetic_merge_substitution_rejected(self) -> None:
-        with self.assertRaisesRegex(witness.Rejected, "synthetic merge substitution"):
-            witness.validate_event(event(), "pull_request", witness.TARGET, "0" * 40)
+        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+            witness.validate_event(event(self.merge_sha), "pull_request", witness.TARGET, "0" * 40)
 
     def test_09_closed_pr_rejected(self) -> None:
         self.assert_event_rejected(
@@ -124,7 +173,7 @@ class SuccessorWitnessTests(unittest.TestCase):
             witness.verify(self.base, self.head, self.merge, tree="0" * 40)
 
     def test_12_wrong_merge_identity_rejected(self) -> None:
-        with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
+        with self.assertRaisesRegex(witness.Rejected, "synthetic merge checkout substitution"):
             witness.verify(self.base, self.head, self.merge, merge="0" * 40)
 
     def test_13_added_file_rejected(self) -> None:
@@ -172,7 +221,7 @@ class SuccessorWitnessTests(unittest.TestCase):
     def test_18_witness_self_approval_rejected(self) -> None:
         with self.assertRaisesRegex(witness.Rejected, "wrong target/event"):
             witness.validate_event(
-                event(), "pull_request", witness.SOURCE, witness.MERGE
+                event(self.merge_sha), "pull_request", witness.SOURCE, self.merge_sha
             )
 
     def test_19_unauthorised_witness_version_rejected(self) -> None:
@@ -181,7 +230,9 @@ class SuccessorWitnessTests(unittest.TestCase):
 
     def test_20_governance_bypass_event_rejected(self) -> None:
         with self.assertRaisesRegex(witness.Rejected, "wrong target/event"):
-            witness.validate_event(event(), "workflow_dispatch", witness.TARGET, witness.MERGE)
+            witness.validate_event(
+                event(self.merge_sha), "workflow_dispatch", witness.TARGET, self.merge_sha
+            )
 
     def test_21_required_paths_are_exact(self) -> None:
         self.assertEqual(
@@ -202,6 +253,79 @@ class SuccessorWitnessTests(unittest.TestCase):
     def test_24_partial_identity_override_rejected(self) -> None:
         with self.assertRaisesRegex(witness.Rejected, "finite identity substitution"):
             witness.verify(self.base, self.head, self.merge, head=witness.BASE)
+
+    def test_25_legitimate_merge_regeneration_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, regenerated = synthetic_root(
+                self.merge,
+                Path(directory),
+                [witness.BASE, witness.HEAD],
+            )
+            result = witness.verify(self.base, self.head, root, merge=regenerated)
+            self.assertEqual(result["merge"], regenerated)
+            self.assertNotEqual(regenerated, witness.HISTORICAL_MERGE)
+
+    def test_26_event_cannot_authorise_unrelated_merge(self) -> None:
+        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+            witness.validate_event(
+                event(self.merge_sha), "pull_request", witness.TARGET, "1" * 40
+            )
+
+    def test_27_reversed_merge_parents_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, generated = synthetic_root(
+                self.merge, Path(directory), [witness.HEAD, witness.BASE]
+            )
+            with self.assertRaisesRegex(witness.Rejected, "synthetic merge parent substitution"):
+                witness.verify(self.base, self.head, root, merge=generated)
+
+    def test_28_missing_merge_parent_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, generated = synthetic_root(
+                self.merge, Path(directory), [witness.BASE]
+            )
+            with self.assertRaisesRegex(witness.Rejected, "synthetic merge parent substitution"):
+                witness.verify(self.base, self.head, root, merge=generated)
+
+    def test_29_altered_synthetic_merge_tree_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root, generated = synthetic_root(
+                self.merge,
+                Path(directory),
+                [witness.BASE, witness.HEAD],
+                alter_tree=True,
+            )
+            with self.assertRaisesRegex(witness.Rejected, "tree substitution"):
+                witness.verify(self.base, self.head, root, merge=generated)
+
+    def test_30_tree_equivalent_untrusted_event_merge_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _root, generated = synthetic_root(
+                self.merge, Path(directory), [witness.BASE, witness.HEAD]
+            )
+            with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+                witness.validate_event(
+                    event(self.merge_sha), "pull_request", witness.TARGET, generated
+                )
+
+    def test_31_missing_event_merge_identity_rejected(self) -> None:
+        candidate = event(self.merge_sha)
+        del candidate["pull_request"]["merge_commit_sha"]
+        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+            witness.validate_event(
+                candidate, "pull_request", witness.TARGET, self.merge_sha
+            )
+
+    def test_32_workflow_uses_event_selected_merge(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github"
+            / "workflows"
+            / "security-policy-maintenance-pr31.yml"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("ref: refs/pull/31/merge"), 1)
+        self.assertEqual(workflow.count("ref: ${{ github.sha }}"), 1)
+        self.assertNotIn(witness.HISTORICAL_MERGE, workflow)
 
 
 def main() -> None:

@@ -6,9 +6,12 @@ historical witness at
 
 It admits only security-policy PR #31 with base
 `f36ed0b258a0581903698cc2cfac923ded19bd30`, head
-`852b1e80e4dc86517f6023aad9d78c87d99b95c2`, synthetic merge
-`ef48261a4b1a9ca95254a5107fb91387f4a95b91`, and tree
-`d690abf621fa2d844f19d5c40ddefaab5a16cf53`.
+`852b1e80e4dc86517f6023aad9d78c87d99b95c2`, and tree
+`d690abf621fa2d844f19d5c40ddefaab5a16cf53`. GitHub may regenerate the
+synthetic merge commit without changing those sources. The event-selected
+merge is therefore accepted only after its protected target repository, exact
+ordered parents, complete tree and source identities are independently
+verified.
 
 The exact two changed paths, their predecessor and successor blobs, canonical
 bytes, dependency locks, historical fixture identity, repository, PR number,
