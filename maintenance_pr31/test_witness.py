@@ -166,9 +166,11 @@ class SuccessorWitnessTests(unittest.TestCase):
             "protected base substitution",
         )
 
-    def test_08_synthetic_merge_substitution_rejected(self) -> None:
-        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
-            witness.validate_event(event(self.merge_sha), "pull_request", witness.TARGET, "0" * 40)
+    def test_08_malformed_evaluation_identity_rejected(self) -> None:
+        with self.assertRaisesRegex(witness.Rejected, "immutable SHA required"):
+            witness.validate_event(
+                event(self.merge_sha), "pull_request", witness.TARGET, "invalid"
+            )
 
     def test_09_closed_pr_rejected(self) -> None:
         self.assert_event_rejected(
@@ -279,11 +281,14 @@ class SuccessorWitnessTests(unittest.TestCase):
             self.assertEqual(result["merge"], regenerated)
             self.assertNotEqual(regenerated, witness.HISTORICAL_MERGE)
 
-    def test_26_event_cannot_authorise_unrelated_merge(self) -> None:
-        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+    def test_26_stale_event_merge_metadata_accepts_authenticated_rerun(self) -> None:
+        stale = event("1" * 40)
+        self.assertEqual(
             witness.validate_event(
-                event(self.merge_sha), "pull_request", witness.TARGET, "1" * 40
-            )
+                stale, "pull_request", witness.TARGET, self.merge_sha
+            ),
+            (witness.HEAD, witness.BASE, self.merge_sha),
+        )
 
     def test_27_reversed_merge_parents_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -312,23 +317,27 @@ class SuccessorWitnessTests(unittest.TestCase):
             with self.assertRaisesRegex(witness.Rejected, "tree substitution"):
                 witness.verify(self.base, self.head, root, merge=generated)
 
-    def test_30_tree_equivalent_untrusted_event_merge_rejected(self) -> None:
+    def test_30_tree_equivalent_untrusted_merge_rejected_by_checkout_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             _root, generated = synthetic_root(
                 self.merge, Path(directory), [witness.BASE, witness.HEAD]
             )
-            with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
-                witness.validate_event(
-                    event(self.merge_sha), "pull_request", witness.TARGET, generated
+            with self.assertRaisesRegex(
+                witness.Rejected, "synthetic merge checkout substitution"
+            ):
+                witness.verify(
+                    self.base, self.head, self.merge, merge=generated
                 )
 
-    def test_31_missing_event_merge_identity_rejected(self) -> None:
+    def test_31_missing_event_merge_metadata_is_not_authority(self) -> None:
         candidate = event(self.merge_sha)
         del candidate["pull_request"]["merge_commit_sha"]
-        with self.assertRaisesRegex(witness.Rejected, "synthetic merge event substitution"):
+        self.assertEqual(
             witness.validate_event(
                 candidate, "pull_request", witness.TARGET, self.merge_sha
-            )
+            ),
+            (witness.HEAD, witness.BASE, self.merge_sha),
+        )
 
     def test_32_workflow_uses_event_selected_merge(self) -> None:
         workflow = (
