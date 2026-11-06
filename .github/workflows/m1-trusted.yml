@@ -117,7 +117,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import automated_trading_bot,pathlib,site,sys; origin=pathlib.Path(automated_trading_bot.__file__).resolve(); venv=pathlib.Path(r'$env:TRUSTED_VENV').resolve(); candidate_src=(pathlib.Path.cwd()/'src').resolve(); sites=[pathlib.Path(p).resolve() for p in site.getsitepackages()]; assert pathlib.Path(sys.executable).resolve().is_relative_to(venv); assert any(origin.is_relative_to(p) for p in sites), (origin,sites); assert not origin.is_relative_to(candidate_src), (origin,candidate_src)"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -c "import tomllib,pathlib; p=tomllib.loads(pathlib.Path('pyproject.toml').read_text()); assert p['project']['requires-python']=='==3.12.10'; assert p['project']['dependencies']==[]"
+          # Runtime dependencies are matched exactly against the selected protected
+          # successor profile by trusted/verify_candidate.py before installation.
+          python -c "import tomllib,pathlib; p=tomllib.loads(pathlib.Path('pyproject.toml').read_text()); assert p['project']['requires-python']=='==3.12.10'"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run independent M1 quality and acceptance gate
         working-directory: candidate

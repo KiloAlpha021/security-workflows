@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
+import tomllib
+
 CANDIDATE_REPOSITORY = "KiloAlpha021/automated-trading-bot"
 TRUSTED_REPOSITORY = "KiloAlpha021/security-workflows"
 TRUSTED_REF = "refs/remotes/origin/main"
@@ -30,7 +32,10 @@ EVOLVABLE_PATHS = {
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 PROFILE_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 IDENTITY = re.compile(r"([0-9a-f]{40})  (.+)\Z")
-PROFILE_KEYS = {
+EXACT_DEPENDENCY = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*\Z"
+)
+PROFILE_KEYS_V1 = {
     "schema_version",
     "profile_id",
     "target_repository",
@@ -42,6 +47,7 @@ PROFILE_KEYS = {
     "trusted_lock_blob",
     "authority_limitations",
 }
+PROFILE_KEYS_V2 = PROFILE_KEYS_V1 | {"authorized_runtime_dependencies"}
 CONTROL_PROFILE_KEYS = {
     "schema_version",
     "profile_id",
@@ -174,7 +180,7 @@ def load_profiles(trusted: Path) -> tuple[list[dict[str, object]], list[dict[str
             raise ValueError("Duplicate or misplaced trusted successor profile")
         seen_ids.add(profile_id)
         schema_version = profile.get("schema_version")
-        if type(schema_version) is not int or schema_version != 1:
+        if type(schema_version) is not int:
             raise ValueError("Unsupported trusted successor profile schema")
         if profile.get("target_repository") != CANDIDATE_REPOSITORY:
             raise ValueError("Wrong successor target repository")
@@ -183,11 +189,17 @@ def load_profiles(trusted: Path) -> tuple[list[dict[str, object]], list[dict[str
         if not isinstance(profile.get("purpose"), str) or not profile["purpose"].strip():
             raise ValueError("Missing successor profile purpose")
         if entries == DEPENDENCY_PROFILE_FILES:
-            if set(profile) != PROFILE_KEYS:
+            if schema_version == 1 and set(profile) != PROFILE_KEYS_V1:
                 raise ValueError("Malformed trusted successor profile")
+            if schema_version == 2 and set(profile) != PROFILE_KEYS_V2:
+                raise ValueError("Malformed trusted successor profile")
+            if schema_version not in {1, 2}:
+                raise ValueError("Unsupported trusted successor profile schema")
             _validate_dependency_profile(trusted, metadata_path, profile)
             dependency_profiles.append(profile)
         else:
+            if schema_version != 1:
+                raise ValueError("Unsupported trusted successor profile schema")
             if set(profile) != CONTROL_PROFILE_KEYS:
                 raise ValueError("Malformed trusted control successor profile")
             _validate_control_profile(metadata_path, profile)
@@ -231,6 +243,45 @@ def _validate_dependency_profile(
         raise ValueError("Successor lock/profile identity mismatch")
     if blobs["requirements-dev.lock"] != profile["trusted_lock_blob"]:
         raise ValueError("Successor candidate/trusted lock mismatch")
+    _authorized_runtime_dependencies(profile)
+
+
+def _authorized_runtime_dependencies(profile: dict[str, object]) -> list[str]:
+    if profile["schema_version"] == 1:
+        return []
+    dependencies = profile["authorized_runtime_dependencies"]
+    if (
+        not isinstance(dependencies, list)
+        or len(dependencies) != len(set(dependencies))
+        or not all(
+            isinstance(value, str) and EXACT_DEPENDENCY.fullmatch(value)
+            for value in dependencies
+        )
+    ):
+        raise ValueError("Invalid authorized runtime dependency contract")
+    return dependencies
+
+
+def _candidate_runtime_dependencies(candidate: Path) -> list[str]:
+    try:
+        project = tomllib.loads(
+            (candidate / "pyproject.toml").read_text(encoding="utf-8")
+        )["project"]
+        dependencies = project["dependencies"]
+    except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as error:
+        raise ValueError("Malformed candidate runtime dependency contract") from error
+    if not isinstance(dependencies, list) or not all(
+        isinstance(value, str) for value in dependencies
+    ):
+        raise ValueError("Malformed candidate runtime dependency contract")
+    return dependencies
+
+
+def _verify_runtime_dependencies(
+    candidate: Path, authorized_dependencies: list[str]
+) -> None:
+    if _candidate_runtime_dependencies(candidate) != authorized_dependencies:
+        raise ValueError("Candidate runtime dependencies are not trusted")
 
 
 def _validate_control_profile(metadata_path: Path, profile: dict[str, object]) -> None:
@@ -318,6 +369,7 @@ def select_dependency_lock(
         expected_lock = git(trusted, "rev-parse", "HEAD:requirements-dev.lock")
         if candidate_blob(candidate, "requirements-dev.lock") != expected_lock:
             raise ValueError("Candidate dependency lock differs from trusted lock")
+        _verify_runtime_dependencies(candidate, [])
         return HISTORICAL_LOCK
 
     matches = []
@@ -330,6 +382,7 @@ def select_dependency_lock(
         raise ValueError("No applicable trusted successor profile")
     if len(matches) != 1:
         raise ValueError("Multiple applicable trusted successor profiles")
+    _verify_runtime_dependencies(candidate, _authorized_runtime_dependencies(matches[0]))
     return safe_relative_path(matches[0]["trusted_lock_path"], label="trusted lock path")
 
 
