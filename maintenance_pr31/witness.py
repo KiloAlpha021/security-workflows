@@ -170,11 +170,12 @@ def validate_event(
     )
     require(pr["head"]["sha"] == HEAD, "candidate substitution")
     require(pr["state"] == "open" and not pr["merged"], "PR is not open/unmerged")
+    # GitHub freezes the pull_request event payload for a workflow run, while
+    # the required-workflow evaluation SHA may be resolved again for a rerun.
+    # The payload's merge_commit_sha is therefore diagnostic metadata, not
+    # durable authority.  Authenticate the evaluated commit below from its
+    # checked-out object, exact ordered parents, tree, delta and blobs.
     evaluation_sha = sha(evaluation_sha)
-    require(
-        pr.get("merge_commit_sha") == evaluation_sha,
-        "synthetic merge event substitution",
-    )
     return HEAD, BASE, evaluation_sha
 
 

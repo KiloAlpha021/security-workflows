@@ -13,6 +13,12 @@ merge is therefore accepted only after its protected target repository, exact
 ordered parents, complete tree and source identities are independently
 verified.
 
+On a workflow rerun, GitHub may retain the original pull-request event payload
+while resolving `GITHUB_SHA` again. The payload's `merge_commit_sha` is not
+used as authority. The evaluated checkout named by `GITHUB_SHA` must still
+pass the complete independent Git-object verification above; a matching tree
+alone is insufficient.
+
 The exact two changed paths, their predecessor and successor blobs, canonical
 bytes, dependency locks, historical fixture identity, repository, PR number,
 branch, commit graph, clean worktrees and source provenance are fail-closed.
