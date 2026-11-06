@@ -58,7 +58,10 @@ def synthetic_root(
 ) -> tuple[Path, str]:
     root = directory / "synthetic"
     subprocess.run(
-        ["git", "clone", "--no-hardlinks", str(source), str(root)],
+        [
+            "git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+            "clone", "--no-hardlinks", str(source), str(root),
+        ],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -91,7 +94,10 @@ def synthetic_root(
         env=commit_environment,
     ).decode().strip()
     subprocess.run(
-        ["git", "-C", str(root), "reset", "--hard", generated],
+        [
+            "git", "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+            "-C", str(root), "reset", "--hard", generated,
+        ],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
