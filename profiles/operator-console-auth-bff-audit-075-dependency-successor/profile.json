@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "profile_id": "operator-console-auth-bff-audit-075-dependency-successor",
+  "target_repository": "KiloAlpha021/automated-trading-bot",
+  "purpose": "OPERATOR CONSOLE AUTHENTICATION BFF AUDIT DEPENDENCY SUCCESSOR",
+  "predecessor_profile": "historical-m1",
+  "allowed_evolved_paths": [
+    "pyproject.toml",
+    "requirements-dev.in",
+    "requirements-dev.lock",
+    "tests/test_dependency_lock.py"
+  ],
+  "successor_blobs": {
+    "pyproject.toml": "52b1c8301a49e9adac27cc3a5f1d16ab18165f1c",
+    "requirements-dev.in": "14079f7d3b82dc1da3d0b410cc1e2964257afb05",
+    "requirements-dev.lock": "a4d6fa8518a4104431d07729654c5d3eef3ba5dc",
+    "tests/test_dependency_lock.py": "da29d8681f8ff82ca5d9f847f4ef45e52d3f0454"
+  },
+  "trusted_lock_path": "profiles/operator-console-auth-bff-audit-075-dependency-successor/requirements-dev.lock",
+  "trusted_lock_blob": "a4d6fa8518a4104431d07729654c5d3eef3ba5dc",
+  "authorized_runtime_dependencies": [
+    "psycopg==3.3.6",
+    "psycopg-binary==3.3.6",
+    "tzdata==2026.6",
+    "webauthn==3.0.1"
+  ],
+  "authority_limitations": [
+    "NO_CORPUS_MERGE_AUTHORITY",
+    "NO_STAGE3_IMPLEMENTATION_AUTHORITY",
+    "NO_PROVIDER_SELECTION_AUTHORITY",
+    "NO_PROGRAMME_CONTROL_MUTATION_AUTHORITY",
+    "NO_STAGE4_AUTHORITY",
+    "NO_FINANCIAL_OR_TRADING_AUTHORITY"
+  ]
+}
