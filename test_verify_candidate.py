@@ -948,5 +948,32 @@ class ArchivedRecordTests(unittest.TestCase):
         self.assertNotIn(name, [item["profile_id"] for item in active])
 
 
+    def test_ecg_profiles_are_archived_and_permanently_non_selectable(self) -> None:
+        root = Path(__file__).parent
+        expected = {
+            "ecg-001-engineering-execution-guard": {
+                "profile.json": "a1f7211a68b61783c9d65af0c2d47fbf02866e91",
+                "trusted-git-blobs.txt": "5f51e61909ac5a6c1e42c08701a888036af2c598",
+            },
+            "ecg-001-cli-contract-correction": {
+                "profile.json": "8f2bb59cad2faf0663b20dd039ff9dd77a8c82f7",
+                "trusted-git-blobs.txt": "5f51e61909ac5a6c1e42c08701a888036af2c598",
+            },
+        }
+        for name, files in expected.items():
+            self.assertFalse((root / "profiles" / name).exists())
+            archive = root / "archives" / "profiles" / name
+            self.assertTrue(archive.is_dir())
+            for filename, blob in files.items():
+                self.assertEqual(git(root, "hash-object", str(archive / filename)), blob)
+            provenance = json.loads((archive / "provenance.json").read_text())
+            self.assertEqual(provenance["classification"], "HISTORICAL_ECG_NON_ACTIVE_RECORD")
+            self.assertEqual(provenance["authority_granted"], [])
+            self.assertFalse(provenance["protected_activation_authorized"])
+        _, active = load_profiles(root)
+        active_ids = {item["profile_id"] for item in active}
+        self.assertTrue(expected.keys().isdisjoint(active_ids))
+
+
 if __name__ == "__main__":
     unittest.main()
