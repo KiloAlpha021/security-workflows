@@ -145,31 +145,20 @@ interpretation described above. Technical controls, historical evidence,
 external obligations and source-specific authorization boundaries are
 not superseded.
 
-## Historical ECG assurance profiles — retained, not operational
+## Historical ECG assurance profiles — archived, permanently non-selectable
 
-ECG is retired and its execution remains prohibited under accepted
-[Smoothflow V5.5 governance](https://github.com/KiloAlpha021/automated-trading-bot/blob/fa3d0d99dbc7704280e4e42759ce7d3df717a6f5/docs/programme/ATIS-SMOOTHFLOW-V5.5-ENGINEERING-GOVERNANCE.md).
-The following `TRUSTED_CONTROL_SUCCESSOR` profiles are retained for historical
-assurance and provenance:
+ECG is retired and its execution remains prohibited under accepted Smoothflow V5.5 governance.
+The two historical ECG trusted-control records have been removed from the active `profiles/`
+namespace and preserved under `archives/profiles/` for immutable provenance only:
 
-- [ecg-001-engineering-execution-guard](profiles/ecg-001-engineering-execution-guard/profile.json):
-  historical target head `71f5d1aa8728f40b3b331e97918df9b53f81ff2f`.
-- [ecg-001-cli-contract-correction](profiles/ecg-001-cli-contract-correction/profile.json):
-  historical target head `d057efe0fbd98f4112124c6c1f2867bc21b50ec2`.
+- `archives/profiles/ecg-001-engineering-execution-guard/`
+- `archives/profiles/ecg-001-cli-contract-correction/`
 
-`ACTIVE_ON_PROTECTED_MAIN` is trusted-verifier metadata, not permission to
-execute ECG. These profiles do not invoke ECG or grant implementation,
-publication, merge, financial, broker or trading authority.
+Archived profiles are outside `load_profiles()` discovery and cannot authorize or select a
+candidate, regardless of historical `activation_state` metadata. Their historical bytes and
+trusted-git-blob sidecars are retained for provenance; the archive location grants no execution,
+implementation, publication, merge, financial, broker or trading authority.
 
-Both remain within the verifier's selectable namespace. Selection requires
-an eligible pull-request event, authenticated historical candidate identities,
-matching changed-control manifests and successor blobs, and either exact
-historical base/head matching or the protected-baseline continuation conditions.
-A future candidate satisfying the historical continuation conditions could
-potentially match; permanent technical inactivity is not established.
-
-This clarification is documentary only. It does not deactivate, archive, move,
-rename or modify either profile. Historical profile bytes, sidecar manifests,
-archives, trusted-verifier behaviour and evidence must remain preserved.
-Existing protected checks, separately attributable assurance and owner-only
-acceptance requirements remain unchanged; no new authority is granted.
+ECG must not be reintroduced into the active trusted-profile namespace. Any future trusted
+control must use a separately authorized non-ECG profile and satisfy the current protected
+verification contract.

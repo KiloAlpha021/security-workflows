@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "classification": "HISTORICAL_ECG_NON_ACTIVE_RECORD",
+  "profile_id": "ecg-001-cli-contract-correction",
+  "original_namespace": "profiles/ecg-001-cli-contract-correction",
+  "archived_namespace": "archives/profiles/ecg-001-cli-contract-correction",
+  "authority_granted": [],
+  "protected_activation_authorized": false,
+  "reason": "ECG retired and prohibited; historical bytes preserved outside active verifier discovery.",
+  "files": [
+    {
+      "original_path": "profiles/ecg-001-cli-contract-correction/profile.json",
+      "archived_path": "archives/profiles/ecg-001-cli-contract-correction/profile.json",
+      "git_blob": "8f2bb59cad2faf0663b20dd039ff9dd77a8c82f7"
+    },
+    {
+      "original_path": "profiles/ecg-001-cli-contract-correction/trusted-git-blobs.txt",
+      "archived_path": "archives/profiles/ecg-001-cli-contract-correction/trusted-git-blobs.txt",
+      "git_blob": "5f51e61909ac5a6c1e42c08701a888036af2c598"
+    }
+  ]
+}
