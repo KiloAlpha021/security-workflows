@@ -346,7 +346,13 @@ class SuccessorWitnessTests(unittest.TestCase):
             / "workflows"
             / "security-policy-maintenance-pr31.yml"
         ).read_text(encoding="utf-8")
-        self.assertEqual(workflow.count("ref: refs/pull/31/merge"), 1)
+        self.assertNotIn("ref: refs/pull/31/merge", workflow)
+        self.assertEqual(
+            workflow.count(
+                "ref: 0d97deeb37274622089242be00e0057fa3892d19"
+            ),
+            1,
+        )
         self.assertEqual(workflow.count("ref: ${{ github.sha }}"), 1)
         self.assertNotIn(witness.HISTORICAL_MERGE, workflow)
 

@@ -38,11 +38,11 @@ jobs:
           path: candidate
           persist-credentials: false
           fetch-depth: 0
-      - name: Check out current PR31 synthetic merge
+      - name: Check out authenticated PR31 merge
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KiloAlpha021/security-policy
-          ref: refs/pull/31/merge
+          ref: 0d97deeb37274622089242be00e0057fa3892d19
           path: evaluation
           persist-credentials: false
           fetch-depth: 0
