@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "classification": "HISTORICAL_ECG_NON_ACTIVE_RECORD",
+  "profile_id": "ecg-001-engineering-execution-guard",
+  "original_namespace": "profiles/ecg-001-engineering-execution-guard",
+  "archived_namespace": "archives/profiles/ecg-001-engineering-execution-guard",
+  "authority_granted": [],
+  "protected_activation_authorized": false,
+  "reason": "ECG retired and prohibited; historical bytes preserved outside active verifier discovery.",
+  "files": [
+    {
+      "original_path": "profiles/ecg-001-engineering-execution-guard/profile.json",
+      "archived_path": "archives/profiles/ecg-001-engineering-execution-guard/profile.json",
+      "git_blob": "a1f7211a68b61783c9d65af0c2d47fbf02866e91"
+    },
+    {
+      "original_path": "profiles/ecg-001-engineering-execution-guard/trusted-git-blobs.txt",
+      "archived_path": "archives/profiles/ecg-001-engineering-execution-guard/trusted-git-blobs.txt",
+      "git_blob": "5f51e61909ac5a6c1e42c08701a888036af2c598"
+    }
+  ]
+}
